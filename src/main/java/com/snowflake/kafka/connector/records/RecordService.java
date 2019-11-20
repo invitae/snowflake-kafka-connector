@@ -31,9 +31,12 @@ import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.header.Header;
 import org.apache.kafka.connect.header.Headers;
 import org.apache.kafka.connect.sink.SinkRecord;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
+
 
 public class RecordService extends Logging
 {
@@ -47,6 +50,9 @@ public class RecordService extends Logging
   private static final String META = "meta";
   private static final String SCHEMA_ID = "schema_id";
   private static final String HEADERS = "headers";
+  private static final Logger LOGGER =
+          LoggerFactory.getLogger(RecordService.class.getName());
+
 
   /**
    * process records
@@ -136,7 +142,11 @@ public class RecordService extends Logging
     ObjectNode result = MAPPER.createObjectNode();
     for (Header header: headers)
     {
-      convertData(header.key(), header.value(), header.schema(), result);
+      try {
+        convertData(header.key(), header.value(), header.schema(), result);
+      } catch (ClassCastException e) {
+        LOGGER.debug(Logging.logMessage("Error in parseHeaders, skipping headers: " + e.getMessage() + " headers: " + headers.toString()));
+      }
     }
     return result;
   }
