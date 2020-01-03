@@ -108,7 +108,8 @@ public class SnowflakeSinkTask extends SinkTask
 
     //generate topic to table map
     this.topic2table = getTopicToTableMap(parsedConfig);
-    this.appendTableHash = Boolean.parseBoolean(parsedConfig.get(SnowflakeSinkConnectorConfig.APPEND_TABLE_HASH));
+    this.appendTableHash = Boolean.parseBoolean(
+            parsedConfig.get(SnowflakeSinkConnectorConfig.APPEND_TABLE_HASH));
 
     //enable jvm proxy
     Utils.enableJVMProxy(parsedConfig);

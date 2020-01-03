@@ -80,7 +80,7 @@ public class UtilsTest
     assert Utils.tableName(topic, topic2table, true).equals("_12345_" + Math.abs(topic.hashCode()));
 
     topic = "test.topic";
-    assert SnowflakeSinkTask.tableName(topic, topic2table, false).equals("test_topic");
+    assert Utils.tableName(topic, topic2table, false).equals("test_topic");
   }
 
   @Test
