@@ -410,7 +410,7 @@ public class Utils
    * @param topic2table topic to table map
    * @return table name
    */
-  public static String tableName(String topic, Map<String, String> topic2table)
+  public static String tableName(String topic, Map<String, String> topic2table, boolean appendTableHash)
   {
     final String PLACE_HOLDER = "_";
     if(topic == null || topic.isEmpty())
@@ -453,8 +453,10 @@ public class Utils
       index ++;
     }
 
-    result.append(PLACE_HOLDER);
-    result.append(hash);
+    if(appendTableHash) {
+      result.append(PLACE_HOLDER);
+      result.append(hash);
+    }
 
     return result.toString();
   }

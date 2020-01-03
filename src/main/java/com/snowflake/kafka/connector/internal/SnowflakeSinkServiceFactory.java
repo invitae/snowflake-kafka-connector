@@ -74,6 +74,12 @@ public class SnowflakeSinkServiceFactory
       return this;
     }
 
+    public SnowflakeSinkServiceBuilder setAppendTableHash(boolean appendTableHash) {
+      this.service.setAppendTableHash(appendTableHash);
+      logInfo("set append table hash flag to {}", appendTableHash);
+      return this;
+    }
+
     public SnowflakeSinkService build()
     {
       logInfo("{} created", SnowflakeSinkService.class.getName());

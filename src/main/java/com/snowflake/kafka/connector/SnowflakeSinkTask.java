@@ -48,6 +48,7 @@ public class SnowflakeSinkTask extends SinkTask
 
   private SnowflakeSinkService sink = null;
   private Map<String, String> topic2table = null;
+  private boolean appendTableHash;
 
   // snowflake JDBC connection provides methods to interact with user's
   // snowflake
@@ -107,6 +108,7 @@ public class SnowflakeSinkTask extends SinkTask
 
     //generate topic to table map
     this.topic2table = getTopicToTableMap(parsedConfig);
+    this.appendTableHash = Boolean.parseBoolean(parsedConfig.get(SnowflakeSinkConnectorConfig.APPEND_TABLE_HASH));
 
     //enable jvm proxy
     Utils.enableJVMProxy(parsedConfig);
@@ -135,6 +137,7 @@ public class SnowflakeSinkTask extends SinkTask
       .setRecordNumber(bufferCountRecords)
       .setFlushTime(bufferFlushTime)
       .setTopic2TableMap(topic2table)
+      .setAppendTableHash(appendTableHash)
       .build();
   }
 
@@ -166,7 +169,7 @@ public class SnowflakeSinkTask extends SinkTask
       "SnowflakeSinkTask[ID:{}]:open, TopicPartitions: {}", this.id, partitions
     ));
     partitions.forEach(tp -> this.sink.startTask(Utils.tableName(tp.topic(),
-      this.topic2table), tp.topic(), tp.partition()));
+      this.topic2table, appendTableHash), tp.topic(), tp.partition()));
   }
 
 
