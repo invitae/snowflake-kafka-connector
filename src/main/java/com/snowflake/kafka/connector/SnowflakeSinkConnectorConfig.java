@@ -42,7 +42,7 @@ public class SnowflakeSinkConnectorConfig
   public static final long BUFFER_SIZE_BYTES_DEFAULT = 5000000;
   public static final long BUFFER_SIZE_BYTES_MAX = 100000000;
   static final String TOPICS_TABLES_MAP = "snowflake.topic2table.map";
-  static final String APPEND_TABLE_HASH = "snowflake.append.hash";
+  static final String APPEND_TABLE_HASH = "snowflake.table.appendhash";
   public static final boolean APPEND_TABLE_HASH_DEFAULT = true;
 
   //in second
