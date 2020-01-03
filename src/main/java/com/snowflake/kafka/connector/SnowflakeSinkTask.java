@@ -49,6 +49,8 @@ public class SnowflakeSinkTask extends SinkTask
   private Map<String, String> config = null;
 
   private Map<String, String> topic2table;
+  private boolean appendTableHash;
+
   // config buffer.count.records -- how many records to buffer
   private long bufferCountRecords;
   // config buffer.size.bytes -- aggregate size in bytes of all records to buffer
@@ -111,6 +113,7 @@ public class SnowflakeSinkTask extends SinkTask
 
     //generate topic to table map
     this.topic2table = getTopicToTableMap(config);
+    this.appendTableHash = Boolean.parseBoolean(config.get(SnowflakeSinkConnectorConfig.APPEND_TABLE_HASH));
 
     //enable jvm proxy
     Utils.enableJVMProxy(config);
@@ -161,7 +164,7 @@ public class SnowflakeSinkTask extends SinkTask
 
     partitions.forEach(
       partition -> {
-        String tableName = tableName(partition.topic(), topic2table);
+        String tableName = tableName(partition.topic(), topic2table, appendTableHash);
         sinkBuilder.addTask(tableName, partition.topic(), partition.partition());
       }
     );
@@ -267,7 +270,7 @@ public class SnowflakeSinkTask extends SinkTask
    * @param topic2table topic to table map
    * @return table name
    */
-  static String tableName(String topic, Map<String, String> topic2table)
+  static String tableName(String topic, Map<String, String> topic2table, boolean appendTableHash)
   {
     final String PLACE_HOLDER = "_";
     if(topic == null || topic.isEmpty())
@@ -310,8 +313,10 @@ public class SnowflakeSinkTask extends SinkTask
       index ++;
     }
 
-    result.append(PLACE_HOLDER);
-    result.append(hash);
+    if(appendTableHash) {
+      result.append(PLACE_HOLDER);
+      result.append(hash);
+    }
 
     return result.toString();
   }

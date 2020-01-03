@@ -42,6 +42,8 @@ public class SnowflakeSinkConnectorConfig
   public static final long BUFFER_SIZE_BYTES_DEFAULT = 5000000;
   public static final long BUFFER_SIZE_BYTES_MAX = 100000000;
   static final String TOPICS_TABLES_MAP = "snowflake.topic2table.map";
+  static final String APPEND_TABLE_HASH = "snowflake.table.appendhash";
+  public static final boolean APPEND_TABLE_HASH_DEFAULT = true;
 
   //in second
   public static final long BUFFER_FLUSH_TIME_SEC_MIN = 10;
@@ -214,6 +216,15 @@ public class SnowflakeSinkConnectorConfig
         3,
         ConfigDef.Width.NONE,
         BUFFER_FLUSH_TIME_SEC)
+      .define(APPEND_TABLE_HASH,
+        Type.BOOLEAN,
+        APPEND_TABLE_HASH_DEFAULT,
+        Importance.LOW,
+        "Append a hash to table names in Snowflake to prevent naming collisions",
+        CONNECTOR_CONFIG,
+        0,
+        ConfigDef.Width.NONE,
+        APPEND_TABLE_HASH)
       ;
   }
 }
