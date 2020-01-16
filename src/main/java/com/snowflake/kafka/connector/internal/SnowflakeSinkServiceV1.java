@@ -400,7 +400,9 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
           throw SnowflakeErrors.ERROR_0019.getException();
         }
         //broken record
-        else if (((SnowflakeRecordContent) record.value()).isBroken())
+        else if (((SnowflakeRecordContent) record.value()).isBroken()
+                || ((record.key() instanceof SnowflakeRecordContent)
+                  && ((SnowflakeRecordContent) record.key()).isBroken()))
         {
           writeBrokenDataToTableStage(record);
           //don't move committed offset in this case
@@ -436,10 +438,24 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
 
     private void writeBrokenDataToTableStage(SinkRecord record)
     {
-      String fileName = FileNameUtils.brokenRecordFileName(prefix,
-        record.kafkaOffset());
-      conn.putToTableStage(tableName, fileName,
-        ((SnowflakeRecordContent) record.value()).getBrokenData());
+      if (record.key() instanceof SnowflakeRecordContent) {
+        SnowflakeRecordContent keyContent = (SnowflakeRecordContent) record.key();
+        writeBrokenRecordContentToTableStage(keyContent, "key", record.kafkaOffset());
+      }
+
+      SnowflakeRecordContent valueContent = (SnowflakeRecordContent) record.value();
+      writeBrokenRecordContentToTableStage(valueContent, "value", record.kafkaOffset());
+    }
+
+    private void writeBrokenRecordContentToTableStage(SnowflakeRecordContent content, String contentPrefix, long offset) {
+      if (content.isBroken()) {
+        String fileName = FileNameUtils.brokenRecordFileName(prefix + contentPrefix + "_raw_", offset);
+        conn.putToTableStage(tableName, fileName, content.getBrokenData());
+      } else if (content.getData() != null && content.getData().length > 0) {
+        String fileName = FileNameUtils.brokenRecordFileName(prefix + contentPrefix + "_json_", offset);
+        //only for single json object per record
+        conn.putToTableStage(tableName, fileName, content.getData()[0].toString().getBytes());
+      }
     }
 
     private long getOffset()
