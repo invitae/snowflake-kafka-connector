@@ -51,12 +51,12 @@ public class SnowflakeConnectionServiceV1 extends Logging
     if (overwrite)
     {
       query = "create or replace table identifier(?) (record_metadata " +
-        "variant, record_content variant)";
+        "variant, record_key variant, record_content variant)";
     }
     else
     {
       query = "create table if not exists identifier(?) (record_metadata " +
-        "variant, record_content variant)";
+        "variant, record_key variant, record_content variant)";
     }
     try
     {
@@ -274,6 +274,7 @@ public class SnowflakeConnectionServiceV1 extends Logging
       stmt = conn.prepareStatement(query);
       stmt.setString(1, tableName);
       result = stmt.executeQuery();
+      boolean hasKey = false;
       boolean hasMeta = false;
       boolean hasContent = false;
       boolean allNullable = true;
@@ -281,6 +282,12 @@ public class SnowflakeConnectionServiceV1 extends Logging
       {
         switch (result.getString(1))
         {
+          case "RECORD_KEY":
+            if(result.getString(2).equals("VARIANT"))
+            {
+              hasKey = true;
+            }
+            break;
           case "RECORD_METADATA":
             if(result.getString(2).equals("VARIANT"))
             {
@@ -301,7 +308,7 @@ public class SnowflakeConnectionServiceV1 extends Logging
 
         }
       }
-      compatible = hasMeta && hasContent && allNullable;
+      compatible = hasKey && hasMeta && hasContent && allNullable;
     } catch (SQLException e)
     {
       logDebug("table {} doesn't exist", tableName);
@@ -709,7 +716,7 @@ public class SnowflakeConnectionServiceV1 extends Logging
   private String pipeDefinition(String tableName, String stageName)
   {
     return "copy into " + tableName +
-      "(RECORD_METADATA, RECORD_CONTENT) from (select $1:meta, $1:content from"
+      "(RECORD_METADATA, RECORD_KEY, RECORD_CONTENT) from (select $1:meta, $1:key, $1:content from"
       + " @" + stageName + " t) file_format = (type = 'json')";
 
   }
