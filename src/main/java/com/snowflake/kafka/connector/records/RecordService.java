@@ -48,6 +48,7 @@ public class RecordService extends Logging
   private static final String KEY = "key";
   private static final String CONTENT = "content";
   private static final String META = "meta";
+  private static final String KEY_SCHEMA_ID = "key_schema_id";
   private static final String SCHEMA_ID = "schema_id";
   private static final String HEADERS = "headers";
   private static final Logger LOGGER =
@@ -120,6 +121,24 @@ public class RecordService extends Logging
       meta.put(KEY, record.key().toString());
     }
 
+    //prepare key
+    JsonNode key = MAPPER.createObjectNode();
+    if (SnowflakeJsonSchema.NAME.equals(record.keySchema().name()))
+    {
+      if (!(record.key() instanceof SnowflakeRecordContent))
+      {
+        throw SnowflakeErrors.ERROR_0010
+                .getException("Input record key should be SnowflakeRecordContent object");
+      }
+      SnowflakeRecordContent keyContent = (SnowflakeRecordContent) record.key();
+      if (!keyContent.isBroken())
+      {
+        meta.put(KEY_SCHEMA_ID, keyContent.getSchemaID());
+        //applied only for single key content per record
+        key = keyContent.getData()[0];
+      }
+    }
+
     if (!record.headers().isEmpty())
     {
       meta.set(HEADERS, parseHeaders(record.headers()));
@@ -130,6 +149,7 @@ public class RecordService extends Logging
     for (JsonNode node : content.getData())
     {
       ObjectNode data = MAPPER.createObjectNode();
+      data.set(KEY, key);
       data.set(CONTENT, node);
       data.set(META, meta);
       buffer.append(data.toString());
