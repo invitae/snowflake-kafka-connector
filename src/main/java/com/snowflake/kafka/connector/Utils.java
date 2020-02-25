@@ -37,7 +37,7 @@ public class Utils
 {
 
   //Connector version, change every release
-  public static final String VERSION = "1.0.0";
+  public static final String VERSION = "1.1.0";
 
   //connector parameter list
   public static final String NAME = "name";
@@ -66,7 +66,7 @@ public class Utils
 
   //mvn repo
   private static final String MVN_REPO =
-    "http://repo1.maven.org/maven2/com/snowflake/snowflake-kafka-connector/";
+    "https://repo1.maven.org/maven2/com/snowflake/snowflake-kafka-connector/";
 
   private static final Logger LOGGER =
     LoggerFactory.getLogger(Utils.class.getName());
@@ -75,7 +75,7 @@ public class Utils
    * check the connector version from Maven repo, report if any update
    * version is available.
    */
-  static void checkConnectorVersion()
+  static boolean checkConnectorVersion()
   {
     LOGGER.info(Logging.logMessage("Snowflake Kafka Connector Version: {}",
       VERSION));
@@ -122,9 +122,10 @@ public class Utils
     {
       LOGGER.warn(Logging.logMessage("can't verify latest connector version " +
         "from Maven Repo\n{}", e.getMessage()));
+      return false;
     }
 
-
+    return true;
   }
 
   /**
@@ -401,6 +402,61 @@ public class Utils
     }
 
     return connectorName;
+  }
+
+  /**
+   * verify topic name, and generate valid table name
+   * @param topic input topic name
+   * @param topic2table topic to table map
+   * @return table name
+   */
+  public static String tableName(String topic, Map<String, String> topic2table)
+  {
+    final String PLACE_HOLDER = "_";
+    if(topic == null || topic.isEmpty())
+    {
+      throw SnowflakeErrors.ERROR_0020.getException("topic name: " + topic);
+    }
+    if(topic2table.containsKey(topic))
+    {
+      return topic2table.get(topic);
+    }
+    if(Utils.isValidSnowflakeObjectIdentifier(topic))
+    {
+      return topic;
+    }
+    int hash = Math.abs(topic.hashCode());
+
+    StringBuilder result = new StringBuilder();
+
+    int index = 0;
+    //first char
+    if(topic.substring(index,index + 1).matches("[_a-zA-Z]"))
+    {
+      result.append(topic.charAt(0));
+      index ++;
+    }
+    else
+    {
+      result.append(PLACE_HOLDER);
+    }
+    while(index < topic.length())
+    {
+      if (topic.substring(index, index + 1).matches("[_$a-zA-Z0-9]"))
+      {
+        result.append(topic.charAt(index));
+      }
+      else
+      {
+        result.append(PLACE_HOLDER);
+      }
+      index ++;
+    }
+
+    result.append(PLACE_HOLDER);
+    result.append(hash);
+
+    return result.toString();
   }
 
   static Map<String, String> parseTopicToTableMap(String input)
