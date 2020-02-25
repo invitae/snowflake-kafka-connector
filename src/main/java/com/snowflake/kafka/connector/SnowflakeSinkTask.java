@@ -138,6 +138,7 @@ public class SnowflakeSinkTask extends SinkTask
       .setRecordNumber(bufferCountRecords)
       .setFlushTime(bufferFlushTime)
       .setTopic2TableMap(topic2table)
+      .setAppendTableHash(appendTableHash)
       .build();
   }
 

@@ -33,6 +33,7 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
   private boolean isStopped;
   private final SnowflakeTelemetryService telemetryService;
   private Map<String, String> topic2TableMap;
+  private boolean appendTableHash;
 
   SnowflakeSinkServiceV1(SnowflakeConnectionService conn)
   {
@@ -50,6 +51,7 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
     isStopped = false;
     this.telemetryService = conn.getTelemetryClient();
     this.topic2TableMap = new HashMap<>();
+    this.appendTableHash = SnowflakeSinkConnectorConfig.APPEND_TABLE_HASH_DEFAULT;
   }
 
   @Override
@@ -82,7 +84,7 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
     {
       logWarn("Topic: {} Partition: {} hasn't been initialized by OPEN " +
         "function", record.topic(), record.kafkaPartition());
-      startTask(Utils.tableName(record.topic(), this.topic2TableMap),
+      startTask(Utils.tableName(record.topic(), this.topic2TableMap, this.appendTableHash),
         record.topic(), record.kafkaPartition());
     }
     pipes.get(nameIndex).insert(record);
@@ -204,6 +206,11 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
   public void setTopic2TableMap(Map<String, String> topic2TableMap)
   {
     this.topic2TableMap = topic2TableMap;
+  }
+
+  @Override
+  public void setAppendTableHash(boolean appendTableHash) {
+    this.appendTableHash = appendTableHash;
   }
 
   @Override

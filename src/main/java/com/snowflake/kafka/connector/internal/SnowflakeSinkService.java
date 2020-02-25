@@ -74,6 +74,12 @@ public interface SnowflakeSinkService
   void setTopic2TableMap(Map<String, String> topic2TableMap);
 
   /**
+   * control whether append a hash at the end of a table name
+   * @param appendTableHash a boolean flag to control append hash to a table name
+   */
+  void setAppendTableHash(boolean appendTableHash);
+
+  /**
    * change flush rate of sink service
    * the minimum flush time is controlled by
    * {@link com.snowflake.kafka.connector.SnowflakeSinkConnectorConfig#BUFFER_FLUSH_TIME_SEC_MIN}
