@@ -84,7 +84,7 @@ public interface SnowflakeConnectionService
 
   /**
    * Check the given table has correct schema
-   * correct schema: (record_metadata variant, record_content variant)
+   * correct schema: (record_metadata variant, record_key variant, record_content variant)
    *
    * @param tableName table name
    * @return true if schema is correct, false is schema is incorrect or
