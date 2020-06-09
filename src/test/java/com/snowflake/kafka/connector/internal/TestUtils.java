@@ -139,9 +139,9 @@ public class TestUtils
       return conn;
     }
 
-    Properties properties = InternalUtils.createProperties(getConf());
-
     SnowflakeURL url = new SnowflakeURL(getConf().get(Utils.SF_URL));
+
+    Properties properties = InternalUtils.createProperties(getConf(), url.sslEnabled());
 
     conn = new SnowflakeDriver().connect(url.getJdbcUrl(), properties);
 
@@ -153,7 +153,7 @@ public class TestUtils
    *
    * @return a map of parameters
    */
-  static Map<String, String> getConf()
+  public static Map<String, String> getConf()
   {
     if (conf == null)
     {
@@ -379,6 +379,34 @@ public class TestUtils
       throw SnowflakeErrors.ERROR_0008.getException(("Input file name: " + name));
     }
     return matcher.group(index);
+  }
+
+  /**
+   * Interface to define the lambda function to be used by assertWithRetry
+   */
+  interface AssertFunction
+  {
+    boolean operate() throws Exception;
+  }
+
+  /**
+   * Assert with sleep and retry logic
+   * @param func the lambda function to be asserted defined by interface AssertFunction
+   * @param intervalSec retry time interval in seconds
+   * @param maxRetry max retry times
+   */
+  static void assertWithRetry(AssertFunction func, int intervalSec, int maxRetry) throws Exception
+  {
+    int iteration = 1;
+    while (! func.operate())
+    {
+      if (iteration > maxRetry)
+      {
+        throw new InterruptedException("Max retry exceeded");
+      }
+      Thread.sleep(intervalSec * 1000);
+      iteration += 1;
+    }
   }
 }
 

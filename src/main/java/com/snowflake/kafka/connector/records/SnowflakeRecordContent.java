@@ -3,24 +3,41 @@ package com.snowflake.kafka.connector.records;
 import com.snowflake.kafka.connector.internal.SnowflakeErrors;
 import net.snowflake.client.jdbc.internal.fasterxml.jackson.databind.JsonNode;
 import net.snowflake.client.jdbc.internal.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.errors.DataException;
 
 public class SnowflakeRecordContent
 {
+
   private static ObjectMapper MAPPER = new ObjectMapper();
+  public static int NON_AVRO_SCHEMA = -1;
   private final JsonNode[] content;
   private final byte[] brokenData;
   private int schemaID;
   private boolean isBroken;
 
-
   /**
    * constructor for null value
    */
-  SnowflakeRecordContent()
+  public SnowflakeRecordContent()
   {
     content = new JsonNode[1];
     content[0] = MAPPER.createObjectNode();
     brokenData = null;
+  }
+
+  /**
+   * constructor for native json converter
+   * @param schema schema of the object
+   * @param data object produced by native avro/json converters
+   */
+  public SnowflakeRecordContent(Schema schema, Object data)
+  {
+    this.content = new JsonNode[1];
+    this.schemaID = NON_AVRO_SCHEMA;
+    this.content[0] = RecordService.convertToJson(schema, data);
+    this.isBroken = false;
+    this.brokenData = null;
   }
 
   /**
@@ -32,7 +49,7 @@ public class SnowflakeRecordContent
     this.content = new JsonNode[1];
     this.content[0] = data;
     this.isBroken = false;
-    this.schemaID = -1;
+    this.schemaID = NON_AVRO_SCHEMA;
     this.brokenData = null;
   }
 
@@ -44,7 +61,7 @@ public class SnowflakeRecordContent
   {
     this.content = data;
     this.isBroken = false;
-    this.schemaID = -1;
+    this.schemaID = NON_AVRO_SCHEMA;
     this.brokenData = null;
   }
 
@@ -56,7 +73,7 @@ public class SnowflakeRecordContent
   {
     this.brokenData = data;
     this.isBroken = true;
-    this.schemaID = -1;
+    this.schemaID = NON_AVRO_SCHEMA;
     this.content = null;
   }
 

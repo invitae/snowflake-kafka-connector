@@ -22,6 +22,7 @@ import com.snowflake.kafka.connector.internal.SnowflakeConnectionServiceFactory;
 import com.snowflake.kafka.connector.internal.SnowflakeErrors;
 import com.snowflake.kafka.connector.internal.SnowflakeSinkService;
 import com.snowflake.kafka.connector.internal.SnowflakeSinkServiceFactory;
+import com.snowflake.kafka.connector.records.SnowflakeMetadataConfig;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.connect.errors.RetriableException;
@@ -108,8 +109,12 @@ public class SnowflakeSinkTask extends SinkTask
 
     //generate topic to table map
     this.topic2table = getTopicToTableMap(parsedConfig);
-    this.appendTableHash = Boolean.parseBoolean(parsedConfig.get(
-            SnowflakeSinkConnectorConfig.APPEND_TABLE_HASH));
+    this.appendTableHash = Boolean.parseBoolean(parsedConfig.getOrDefault(
+            SnowflakeSinkConnectorConfig.APPEND_TABLE_HASH,
+            String.valueOf(SnowflakeSinkConnectorConfig.APPEND_TABLE_HASH_DEFAULT)));
+
+    // generate metadataConfig table
+    SnowflakeMetadataConfig metadataConfig = new SnowflakeMetadataConfig(parsedConfig);
 
     //enable jvm proxy
     Utils.enableJVMProxy(parsedConfig);
@@ -138,6 +143,7 @@ public class SnowflakeSinkTask extends SinkTask
       .setRecordNumber(bufferCountRecords)
       .setFlushTime(bufferFlushTime)
       .setTopic2TableMap(topic2table)
+      .setMetadataConfig(metadataConfig)
       .setAppendTableHash(appendTableHash)
       .build();
   }
@@ -220,24 +226,36 @@ public class SnowflakeSinkTask extends SinkTask
     throws RetriableException
   {
 
-    Map<TopicPartition, OffsetAndMetadata> committedOffsets = new HashMap<>();
+    if (sink == null || sink.isClosed())
+    {
+      LOGGER.warn(Logging.logMessage("SnowflakeSinkTask[ID:{}]: sink " +
+        "not initialized or closed before preCommit", this.id));
+      return offsets;
+    }
 
-    offsets.forEach(
-      (topicPartition, offsetAndMetadata) ->
-      {
-        long offSet = getSink().getOffset(topicPartition);
-        if (offSet == 0)
+    Map<TopicPartition, OffsetAndMetadata> committedOffsets = new HashMap<>();
+    // it's ok to just log the error since commit can retry
+    try
+    {
+      offsets.forEach(
+        (topicPartition, offsetAndMetadata) ->
         {
-          committedOffsets.put(topicPartition, offsetAndMetadata);
-          //todo: update offset?
+          long offSet = sink.getOffset(topicPartition);
+          if (offSet == 0) {
+            committedOffsets.put(topicPartition, offsetAndMetadata);
+            //todo: update offset?
+          } else {
+            committedOffsets.put(topicPartition,
+              new OffsetAndMetadata(sink.getOffset(topicPartition)));
+          }
         }
-        else
-        {
-          committedOffsets.put(topicPartition,
-            new OffsetAndMetadata(getSink().getOffset(topicPartition)));
-        }
-      }
-    );
+      );
+    } catch (Exception e)
+    {
+      LOGGER.error(Logging.logMessage("SnowflakeSinkTask[ID:{}]: Error " +
+        "while preCommit: {} ", this.id, e.getMessage()));
+      return offsets;
+    }
 
     return committedOffsets;
   }

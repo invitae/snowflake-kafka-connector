@@ -8,12 +8,15 @@ import net.snowflake.client.jdbc.internal.fasterxml.jackson.databind.ObjectMappe
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.SchemaAndValue;
+import org.apache.kafka.connect.json.JsonConverter;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.junit.After;
 import org.junit.Test;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
+import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -89,8 +92,7 @@ public class SinkServiceIT
   }
 
   @Test
-  public void testIngestion() throws InterruptedException,
-    SQLException
+  public void testIngestion() throws Exception
   {
     conn.createTable(table);
     conn.createStage(stage);
@@ -122,26 +124,105 @@ public class SinkServiceIT
     assert FileNameUtils.fileNameToEndOffset(fileName) == offset;
 
     //wait for ingest
-    Thread.sleep(90 * 1000);
-    assert TestUtils.tableSize(table) == 1;
+    TestUtils.assertWithRetry(() -> TestUtils.tableSize(table) == 1, 30, 6);
 
     //change cleaner
-    Thread.sleep(60 * 1000);
-    assert conn.listStage(stage,
-      FileNameUtils.filePrefix(TestUtils.TEST_CONNECTOR_NAME, table,
-        partition)).isEmpty();
+    TestUtils.assertWithRetry(() -> getStageSize(stage, table, partition) == 0,30, 6);
 
     assert service.getOffset(new TopicPartition(topic, partition)) == offset + 1;
 
     service.closeAll();
-    Thread.sleep(60 * 1000);
     // don't drop pipe in current version
 //    assert !conn.pipeExist(pipe);
   }
 
   @Test
-  public void testRecordNumber() throws InterruptedException,
-    SQLException, ExecutionException
+  public void testNativeInputIngestion() throws Exception
+  {
+    conn.createTable(table);
+    conn.createStage(stage);
+    String jsonWithSchema = "" +
+      "{\n" +
+      "  \"schema\": {\n" +
+      "    \"type\": \"struct\",\n" +
+      "    \"fields\": [\n" +
+      "      {\n" +
+      "        \"type\": \"string\",\n" +
+      "        \"optional\": false,\n" +
+      "        \"field\": \"regionid\"\n" +
+      "      },\n" +
+      "      {\n" +
+      "        \"type\": \"string\",\n" +
+      "        \"optional\": false,\n" +
+      "        \"field\": \"gender\"\n" +
+      "      }\n" +
+      "    ],\n" +
+      "    \"optional\": false,\n" +
+      "    \"name\": \"ksql.users\"\n" +
+      "  },\n" +
+      "  \"payload\": {\n" +
+      "    \"regionid\": \"Region_5\",\n" +
+      "    \"gender\": \"MALE\"\n" +
+      "  }\n" +
+      "}";
+    String jsonWithoutSchema = "{\"userid\": \"User_1\"}";
+
+    JsonConverter converter = new JsonConverter();
+    HashMap<String, String> converterConfig = new HashMap<String, String>();
+    converterConfig.put("schemas.enable", "false");
+    converter.configure(converterConfig, false);
+    SchemaAndValue noSchemaInput = converter.toConnectData(topic, jsonWithoutSchema.getBytes(StandardCharsets.UTF_8));
+
+    converter = new JsonConverter();
+    converterConfig = new HashMap<String, String>();
+    converterConfig.put("schemas.enable", "true");
+    converter.configure(converterConfig, false);
+    SchemaAndValue schemaInput = converter.toConnectData(topic, jsonWithSchema.getBytes(StandardCharsets.UTF_8));
+
+    long startOffset = 0;
+    long endOffset = 1;
+    long recordCount = endOffset + 1;
+
+    SinkRecord noSchemaRecord = new SinkRecord(topic, partition, Schema.STRING_SCHEMA
+      , "test", noSchemaInput.schema(), noSchemaInput.value(), startOffset);
+    SinkRecord schemaRecord = new SinkRecord(topic, partition, Schema.STRING_SCHEMA
+      , "test", schemaInput.schema(), schemaInput.value(), startOffset + 1);
+
+    SnowflakeSinkService service =
+      SnowflakeSinkServiceFactory
+        .builder(conn)
+        .setRecordNumber(recordCount)
+        .addTask(table, topic, partition)
+        .build();
+
+    service.insert(noSchemaRecord);
+    service.insert(schemaRecord);
+
+    List<String> files = conn.listStage(stage,
+      FileNameUtils.filePrefix(TestUtils.TEST_CONNECTOR_NAME, table, partition));
+    assert files.size() == 1;
+    String fileName = files.get(0);
+
+    assert FileNameUtils.fileNameToTimeIngested(fileName) < System.currentTimeMillis();
+    assert FileNameUtils.fileNameToPartition(fileName) == partition;
+    assert FileNameUtils.fileNameToStartOffset(fileName) == startOffset;
+    assert FileNameUtils.fileNameToEndOffset(fileName) == endOffset;
+
+    //wait for ingest
+    TestUtils.assertWithRetry(() -> TestUtils.tableSize(table) == recordCount, 30, 8);
+
+    //change cleaner
+    TestUtils.assertWithRetry(() -> getStageSize(stage, table, partition) == 0,30, 8);
+
+    assert service.getOffset(new TopicPartition(topic, partition)) == recordCount;
+
+    service.closeAll();
+    // don't drop pipe in current version
+    // assert !conn.pipeExist(pipe);
+  }
+
+  @Test
+  public void testRecordNumber() throws Exception
   {
     conn.createTable(table);
     conn.createStage(stage);
@@ -164,8 +245,8 @@ public class SinkServiceIT
     assert result.get() == numOfRecord / numLimit;
     assert result1.get() == numOfRecord1 / numLimit;
 
-    Thread.sleep(90 * 1000);
-    assert TestUtils.tableSize(table) == numOfRecord + numOfRecord1;
+    TestUtils.assertWithRetry(() ->
+      TestUtils.tableSize(table) == numOfRecord + numOfRecord1, 30, 6);
 
     service.closeAll();
   }
@@ -188,9 +269,7 @@ public class SinkServiceIT
               , "test", input.schema(), input.value(), i));
         }
 
-        return conn.listStage(stage,
-          FileNameUtils.filePrefix(TestUtils.TEST_CONNECTOR_NAME, table,
-            partition)).size();
+        return getStageSize(stage, table, partition);
       }
     );
   }
@@ -219,7 +298,7 @@ public class SinkServiceIT
   }
 
   @Test
-  public void testFlushTime() throws InterruptedException, ExecutionException
+  public void testFlushTime() throws Exception
   {
     conn.createTable(table);
     conn.createStage(stage);
@@ -235,17 +314,13 @@ public class SinkServiceIT
 
     assert insert(service, partition, numOfRecord).get() == 0;
 
-    Thread.sleep((flushTime + 5) * 1000);
-
-    assert conn.listStage(stage,
-      FileNameUtils.filePrefix(TestUtils.TEST_CONNECTOR_NAME, table,
-        partition)).size() == 1;
+    TestUtils.assertWithRetry(() -> getStageSize(stage, table, partition) == 1, 15, 4);
 
     service.closeAll();
   }
 
   @Test
-  public void testRecover() throws InterruptedException
+  public void testRecover() throws Exception
   {
     String data = "{\"content\":{\"name\":\"test\"},\"meta\":{\"offset\":0," +
       "\"topic\":\"test\",\"partition\":0}}";
@@ -268,10 +343,7 @@ public class SinkServiceIT
 
     ingestionService.ingestFile(fileName1);
 
-    Thread.sleep(90 * 1000);
-
-    assert conn.listStage(stage,
-      FileNameUtils.filePrefix(TestUtils.TEST_CONNECTOR_NAME, table, 0)).size() == 2;
+    assert getStageSize(stage, table, 0) == 2;
 
     SnowflakeSinkService service = SnowflakeSinkServiceFactory.builder(conn)
       .addTask(table, topic, partition)
@@ -284,15 +356,7 @@ public class SinkServiceIT
     //lazy init and recovery function
     service.insert(record);
 
-    Thread.sleep(10 * 1000); //wait a few second, s3 consistency issue
-
-    assert conn.listStage(stage,
-      FileNameUtils.filePrefix(TestUtils.TEST_CONNECTOR_NAME, table, 0)).size() == 1;
-
-    Thread.sleep(120 * 1000);
-
-    assert conn.listStage(stage,
-      FileNameUtils.filePrefix(TestUtils.TEST_CONNECTOR_NAME, table, 0)).size() == 0;
+    TestUtils.assertWithRetry(() -> getStageSize(stage, table, 0) == 0, 30, 6);
 
     service.closeAll();
   }
@@ -325,5 +389,10 @@ public class SinkServiceIT
     assert TestUtils.getOffsetFromBrokenFileName(name) == offset;
 
     service.closeAll();
+  }
+
+  int getStageSize(String stage, String table, int partition)
+  {
+    return conn.listStage(stage, FileNameUtils.filePrefix(TestUtils.TEST_CONNECTOR_NAME, table, partition)).size();
   }
 }

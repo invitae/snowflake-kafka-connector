@@ -3,16 +3,21 @@ package com.snowflake.kafka.connector.internal;
 import com.snowflake.kafka.connector.SnowflakeSinkConnectorConfig;
 import com.snowflake.kafka.connector.Utils;
 import com.snowflake.kafka.connector.records.RecordService;
+import com.snowflake.kafka.connector.records.SnowflakeJsonSchema;
+import com.snowflake.kafka.connector.records.SnowflakeMetadataConfig;
 import com.snowflake.kafka.connector.records.SnowflakeRecordContent;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.connect.sink.SinkRecord;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.locks.Lock;
@@ -103,7 +108,8 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
     else
     {
       logError("Failed to find offset of Topic: {}, Partition: {}, sink " +
-        "service hasn't been initialized");
+        "service hasn't been initialized", topicPartition.topic(),
+        topicPartition.partition());
       return 0;
     }
   }
@@ -127,8 +133,8 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
       }
       else
       {
-        logError("Failed to close sink service for Topic: {}, Partition: {}, " +
-          "sink service hasn't been initialized");
+        logWarn("Failed to close sink service for Topic: {}, Partition: {}, " +
+          "sink service hasn't been initialized", tp.topic(), tp.partition());
       }
     });
   }
@@ -206,6 +212,12 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
   public void setTopic2TableMap(Map<String, String> topic2TableMap)
   {
     this.topic2TableMap = topic2TableMap;
+  }
+
+  @Override
+  public void setMetadataConfig(SnowflakeMetadataConfig configMap)
+  {
+    this.recordService.setMetadataConfig(configMap);
   }
 
   @Override
@@ -324,13 +336,14 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
             {
               Thread.sleep(CLEAN_TIME);
               checkStatus();
+              if (System.currentTimeMillis() - startTime > ONE_HOUR)
+              {
+                sendUsageReport();
+              }
             } catch (InterruptedException e)
             {
-              logError("cleaner error:\n{}", e.getMessage());
-            }
-            if (System.currentTimeMillis() - startTime > ONE_HOUR)
-            {
-              sendUsageReport();
+              logInfo("Flusher terminated by an interrupt:\n{}", e.getMessage());
+              break;
             }
           }
         }
@@ -339,7 +352,7 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
 
     private void stopCleaner()
     {
-      cleanerExecutor.shutdown();
+      cleanerExecutor.shutdownNow();
       logInfo("pipe {}: cleaner terminated", pipeName);
     }
 
@@ -370,7 +383,8 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
               logDebug("pipe {}: flusher flushed", pipeName);
             } catch (InterruptedException e)
             {
-              logError("flusher error:\n{}", e.getMessage());
+              logInfo("Flusher terminated by an interrupt:\n{}", e.getMessage());
+              break;
             }
           }
         }
@@ -379,7 +393,7 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
 
     private void stopFlusher()
     {
-      flusherExecutor.shutdown();
+      flusherExecutor.shutdownNow();
       logInfo("pipe {}: flusher terminated", pipeName);
     }
 
@@ -395,16 +409,33 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
       //ignore ingested files
       if (record.kafkaOffset() > processedOffset)
       {
+        SinkRecord snowflakeRecord;
         if (!(record.value() instanceof SnowflakeRecordContent))
         {
-          throw SnowflakeErrors.ERROR_0019.getException();
+          SnowflakeRecordContent newSFContent;
+          try
+          {
+            newSFContent = new SnowflakeRecordContent(record.valueSchema(), record.value());
+          } catch (Exception e)
+          {
+            newSFContent = new SnowflakeRecordContent();
+            logError("native content parser error:\n{}", e.getMessage());
+          }
+          // create new sinkRecord
+          snowflakeRecord = new SinkRecord(record.topic(), record.kafkaPartition(), record.keySchema(), record.key(), new SnowflakeJsonSchema(),
+            newSFContent, record.kafkaOffset(), record.timestamp(), record.timestampType(), record.headers());
         }
-        //broken record
-        else if (((SnowflakeRecordContent) record.value()).isBroken()
-                || ((record.key() instanceof SnowflakeRecordContent)
-                  && ((SnowflakeRecordContent) record.key()).isBroken()))
+        else
         {
-          writeBrokenDataToTableStage(record);
+          snowflakeRecord = record;
+        }
+
+        //broken record
+        if (((SnowflakeRecordContent) snowflakeRecord.value()).isBroken()
+                || ((snowflakeRecord.key() instanceof SnowflakeRecordContent)
+                  && ((SnowflakeRecordContent) snowflakeRecord.key()).isBroken()))
+        {
+          writeBrokenDataToTableStage(snowflakeRecord);
           //don't move committed offset in this case
           //only move it in the normal cases
         }
@@ -414,8 +445,8 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
           bufferLock.lock();
           try
           {
-            processedOffset = record.kafkaOffset();
-            buffer.insert(record);
+            processedOffset = snowflakeRecord.kafkaOffset();
+            buffer.insert(snowflakeRecord);
             if (buffer.getBufferSize() >= getFileSize() ||
               (getRecordNumber() != 0 && buffer.getNumOfRecord() >= getRecordNumber()))
             {
@@ -453,7 +484,7 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
         conn.putToTableStage(tableName, fileName, content.getBrokenData());
       } else if (content.getData() != null && content.getData().length > 0) {
         String fileName = FileNameUtils.brokenRecordFileName(prefix + contentPrefix + "_json_", offset);
-        //only for single json object per record
+        // Only for single json object per record
         conn.putToTableStage(tableName, fileName, content.getData()[0].toString().getBytes());
       }
     }
@@ -513,7 +544,9 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
 
       //old files
       List<String> oldFiles = new LinkedList<>();
-      tmpFileNames.forEach(
+
+      // iterate over a copy since failed files get removed from it
+      new LinkedList<>(tmpFileNames).forEach(
         name ->
         {
           long time = FileNameUtils.fileNameToTimeIngested(name);
@@ -689,6 +722,8 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
       committedOffset = Long.MAX_VALUE;
       processedOffset = -1;
 
+      Set<String> filesForIngestion = new HashSet<>();
+
       ingestionService.readOneHourHistory(files, startTime).forEach(
         (name, status) ->
         {
@@ -702,7 +737,7 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
           {
             case NOT_FOUND:
               //re ingest
-              ingestionService.ingestFile(name);
+              filesForIngestion.add(name);
               result.put(name, status);
               if (committedOffset > startOffset)
               {
@@ -724,6 +759,9 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
           }
         }
       );
+      // batch call Snowpipe to ingest file
+      ingestionService.ingestFiles(filesForIngestion);
+
       if (!loadedFiles.isEmpty())
       {
         purge(loadedFiles);
