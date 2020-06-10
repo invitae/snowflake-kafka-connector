@@ -46,7 +46,7 @@ public class IngestionServiceIT
   }
 
   @Test
-  public void ingestFileTest()
+  public void ingestFileTest() throws Exception
   {
     String file = "{\"aa\":123}";
     String fileName =
@@ -57,14 +57,18 @@ public class IngestionServiceIT
     List<String> names = new ArrayList<>(1);
     names.add(fileName);
     //ingest report
-    assert checkIngestReport(names, 180000);
+    assert checkIngestReport(names, 310000);
     //load history
-    Map<String, InternalUtils.IngestedFileStatus> result =
-      ingestService.readOneHourHistory(names, System.currentTimeMillis() -
-        3600 * 1000);
-    assert result.get(fileName).equals(InternalUtils.IngestedFileStatus.LOADED);
-    assert ingestService.getStageName().equals(stage);
+    TestUtils.assertWithRetry(() ->
+    {
+      Map<String, InternalUtils.IngestedFileStatus> result =
+        ingestService.readOneHourHistory(names, System.currentTimeMillis() -
+          3600 * 1000);
+      System.out.println(result.get(fileName));
+      return result.get(fileName).equals(InternalUtils.IngestedFileStatus.LOADED);
+    }, 15, 4);
 
+    assert ingestService.getStageName().equals(stage);
   }
 
   private boolean checkIngestReport(List<String> files, long timeOut)
@@ -76,7 +80,7 @@ public class IngestionServiceIT
       List<String> names = files;
       while (!names.isEmpty())
       {
-        Thread.sleep(10000);
+        Thread.sleep(30000);
         result = ingestService.readIngestReport(names);
         if (result.containsValue(InternalUtils.IngestedFileStatus.FAILED))
         {

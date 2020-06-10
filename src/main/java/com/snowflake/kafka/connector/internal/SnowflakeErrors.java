@@ -185,6 +185,26 @@ public enum SnowflakeErrors
     "Failed to connection status",
     "Failed to retrieve Snowflake JDBC connection Status"
   ),
+  ERROR_2007(
+      "2007",
+      "Failed to create table",
+      "Failed to create table on Snowflake, please check that you have permission to do so."
+  ),
+  ERROR_2008(
+      "2008",
+      "Failed to create stage",
+      "Failed to create stage on Snowflake, please check that you have permission to do so."
+  ),
+  ERROR_2009(
+      "2009",
+      "Failed to create pipe",
+      "Failed to create pipe on Snowflake, please check that you have permission to do so."
+  ),
+  ERROR_2010(
+      "2010",
+      "Connection throttled",
+      "Connection is throttled either on GS or on Snowpipe"
+  ),
   // Snowpipe related issues 3---
   ERROR_3001(
     "3001",
@@ -299,6 +319,11 @@ public enum SnowflakeErrors
     "5014",
     "Failed to put records",
     "SinkTask hasn't been initialized before calling PUT function"
+  ),
+  ERROR_5015(
+    "5015",
+    "Invalid SinkRecord received",
+    "Error parsing SinkRecord of native converter or SinkRecord header"
   )
   ;
 

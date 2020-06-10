@@ -84,7 +84,7 @@ public interface SnowflakeConnectionService
 
   /**
    * Check the given table has correct schema
-   * correct schema: (record_metadata variant, record_content variant)
+   * correct schema: (record_metadata variant, record_key variant, record_content variant)
    *
    * @param tableName table name
    * @return true if schema is correct, false is schema is incorrect or
@@ -111,6 +111,20 @@ public interface SnowflakeConnectionService
    * or pipe does not exists
    */
   boolean isPipeCompatible(String tableName, String stageName, String pipeName);
+
+  /**
+   * check if a given database exists
+   *
+   * @param databaseName database name
+   */
+  void databaseExists(String databaseName);
+
+  /**
+   * check if a given schema exists
+   *
+   * @param schemaName schema name
+   */
+  void schemaExists(String schemaName);
 
   /**
    * drop snowpipe
