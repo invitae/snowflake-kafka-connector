@@ -647,10 +647,15 @@ public class SnowflakeConnectionServiceV1 extends Logging
     InputStream input = new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8));
     try
     {
-      sfconn.uploadStream(stageName,
-        FileNameUtils.getPrefixFromFileName(fileName), input,
-        FileNameUtils.removePrefixAndGZFromFileName(fileName), true);
-    } catch (SQLException e)
+      InternalUtils.backoffAndRetry(telemetry,
+          () ->
+          {
+            sfconn.uploadStream(stageName,
+                                FileNameUtils.getPrefixFromFileName(fileName), input,
+                                FileNameUtils.removePrefixAndGZFromFileName(fileName), true);
+            return true;
+          });
+    } catch (Exception e)
     {
       throw SnowflakeErrors.ERROR_2003.getException(e);
     }
@@ -780,6 +785,10 @@ public class SnowflakeConnectionServiceV1 extends Logging
    */
   private void removeFile(String stageName, List<String> fileList)
   {
+    if (fileList.size() == 0)
+    {
+      return;
+    }
     InternalUtils.assertNotEmpty("stageName", stageName);
     try
     {

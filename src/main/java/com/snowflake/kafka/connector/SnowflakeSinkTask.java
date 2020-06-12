@@ -102,6 +102,7 @@ public class SnowflakeSinkTask extends SinkTask
   @Override
   public void start(final Map<String, String> parsedConfig)
   {
+    long startTime = System.currentTimeMillis();
     this.id = parsedConfig.getOrDefault(Utils.TASK_ID, "-1");
 
     LOGGER.info(Logging.logMessage("SnowflakeSinkTask[ID:{}]:start", this.id));
@@ -146,6 +147,9 @@ public class SnowflakeSinkTask extends SinkTask
       .setMetadataConfig(metadataConfig)
       .setAppendTableHash(appendTableHash)
       .build();
+
+    LOGGER.info(Logging.logMessage("SnowflakeSinkTask[ID:{}]:start. Time: {} seconds", this.id,
+      (System.currentTimeMillis() - startTime) / 1000));
   }
 
   /**
@@ -156,11 +160,15 @@ public class SnowflakeSinkTask extends SinkTask
   @Override
   public void stop()
   {
+    long startTime = System.currentTimeMillis();
     LOGGER.info(Logging.logMessage("SnowflakeSinkTask[ID:{}]:stop", this.id));
     if (sink != null)
     {
       this.sink.closeAll();
     }
+
+    LOGGER.info(Logging.logMessage("SnowflakeSinkTask[ID:{}]:stop. Time: {} seconds", this.id,
+      (System.currentTimeMillis() - startTime) / 1000));
   }
 
   /**
@@ -172,11 +180,15 @@ public class SnowflakeSinkTask extends SinkTask
   @Override
   public void open(final Collection<TopicPartition> partitions)
   {
+    long startTime = System.currentTimeMillis();
     LOGGER.info(Logging.logMessage(
-      "SnowflakeSinkTask[ID:{}]:open, TopicPartitions: {}", this.id, partitions
+      "SnowflakeSinkTask[ID:{}]:open, TopicPartition number: {}", this.id, partitions.size()
     ));
     partitions.forEach(tp -> this.sink.startTask(Utils.tableName(tp.topic(),
       this.topic2table, appendTableHash), tp.topic(), tp.partition()));
+
+    LOGGER.info(Logging.logMessage("SnowflakeSinkTask[ID:{}]:open. Time: {} seconds", this.id,
+      (System.currentTimeMillis() - startTime) / 1000));
   }
 
 
@@ -191,11 +203,15 @@ public class SnowflakeSinkTask extends SinkTask
   @Override
   public void close(final Collection<TopicPartition> partitions)
   {
+    long startTime = System.currentTimeMillis();
     LOGGER.info(Logging.logMessage("SnowflakeSinkTask[ID:{}]:close", this.id));
     if (this.sink != null)
     {
       this.sink.close(partitions);
     }
+
+    LOGGER.info(Logging.logMessage("SnowflakeSinkTask[ID:{}]:close. Time: {} seconds",
+      this.id, (System.currentTimeMillis() - startTime) / 1000));
   }
 
   /**
@@ -207,10 +223,14 @@ public class SnowflakeSinkTask extends SinkTask
   @Override
   public void put(final Collection<SinkRecord> records)
   {
+    long startTime = System.currentTimeMillis();
     LOGGER.info(Logging.logMessage("SnowflakeSinkTask[ID:{}]:put {} records",
       this.id, records.size()));
     //log more info may impact performance
-    records.forEach(getSink()::insert);
+    getSink().insert(records);
+
+    LOGGER.info(Logging.logMessage("SnowflakeSinkTask[ID:{}]:put {} records. Time: {} seconds",
+      this.id, records.size(), (System.currentTimeMillis() - startTime) / 1000));
   }
 
   /**
@@ -225,6 +245,8 @@ public class SnowflakeSinkTask extends SinkTask
     Map<TopicPartition, OffsetAndMetadata> offsets)
     throws RetriableException
   {
+    long startTime = System.currentTimeMillis();
+    LOGGER.info(Logging.logMessage("SnowflakeSinkTask[ID:{}]:preCommit", this.id));
 
     if (sink == null || sink.isClosed())
     {
@@ -256,7 +278,8 @@ public class SnowflakeSinkTask extends SinkTask
         "while preCommit: {} ", this.id, e.getMessage()));
       return offsets;
     }
-
+    LOGGER.info(Logging.logMessage("SnowflakeSinkTask[ID:{}]:preCommit. Time: {} seconds", this.id,
+      (System.currentTimeMillis() - startTime) / 1000));
     return committedOffsets;
   }
 
