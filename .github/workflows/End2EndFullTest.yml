@@ -1,8 +1,12 @@
 name: Kafka Connector End2End Full Version Test
 
 on:
-  schedule:
-    - cron:  '0 8 * * *'
+  push:
+    branches-ignore:
+      - '**'
+#on:
+#  schedule:
+#    - cron:  '0 8 * * *'
 
 jobs:
   build:
@@ -38,7 +42,7 @@ jobs:
         pip3 install --upgrade snowflake-connector-python
         curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
         sudo apt-get -y install jq
-    
+
     - name: Build with Unit and Integration Test
       env:
         JACOCO_COVERAGE: true
@@ -47,7 +51,7 @@ jobs:
       run: |
         cd test
         ./build_apache.sh ../../snowflake-kafka-connector
-    
+
     - name: End to End Test of Confluent Platform 5.0.0
       env:
         SNOWFLAKE_CREDENTIAL_FILE: "../profile.json"
