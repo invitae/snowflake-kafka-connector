@@ -2,9 +2,13 @@ name: Kafka Connector End2End Test
 
 on:
   push:
-    branches: [ master ]
-  pull_request:
-    branches: '**'
+    branches-ignore:
+      - '**'
+#on:
+#  push:
+#    branches: [ master ]
+#  pull_request:
+#    branches: '**'
 
 jobs:
   build:
@@ -49,7 +53,7 @@ jobs:
 #        sudo minikube start --vm-driver=none
 #        sudo chown -R $USER $HOME/.kube $HOME/.minikube || true
 #        minikube update-context
-    
+
     - name: Build with Unit and Integration Test
       env:
         JACOCO_COVERAGE: true
@@ -72,7 +76,7 @@ jobs:
       run: |
         cd test
         ./run_test_apache.sh 2.5.0 ./apache_properties
-      
+
     - name: Code Coverage
       uses: codecov/codecov-action@v1
 
