@@ -19,6 +19,7 @@ public class SnowflakeSinkServiceV1Test
     public void testInsertRecordWithInvalidKeyOrValue()
     {
         String validJson = "{\"name\":\"test\"}";
+        String validArrJson = "[" + validJson + "]";
         String invalidJson = "test";
         SnowflakeConverter converter = new SnowflakeJsonConverter();
         SchemaAndValue validValue = converter.toConnectData(TOPIC, validJson.getBytes(UTF_8));
@@ -32,6 +33,7 @@ public class SnowflakeSinkServiceV1Test
                 invalidValue.schema(), invalidValue.value(), 2);
 
         SnowflakeConnectionService conn = spy(SnowflakeConnectionService.class);
+        when(conn.getConnectorName()).thenReturn("connector");
         SnowflakeSinkServiceV1 sinkService = new SnowflakeSinkServiceV1(conn);
         sinkService.startTask("table", TOPIC, 0);
 
@@ -43,13 +45,13 @@ public class SnowflakeSinkServiceV1Test
         ArgumentCaptor<byte[]> content = ArgumentCaptor.forClass(byte[].class);
         verify(conn, times(4)).putToTableStage(any(), file.capture(), content.capture());
 
-        assert file.getAllValues().get(0).contains("_raw_");
+        assert file.getAllValues().get(0).matches("connector/table/0/1_key_\\d+\\.gz");
         assert new String(content.getAllValues().get(0), UTF_8).equals(invalidJson);
-        assert file.getAllValues().get(1).contains("_json_");
-        assert new String(content.getAllValues().get(1), UTF_8).equals(validJson);
-        assert file.getAllValues().get(2).contains("_json_");
-        assert new String(content.getAllValues().get(2), UTF_8).equals(validJson);
-        assert file.getAllValues().get(3).contains("_raw_");
+        assert file.getAllValues().get(1).matches("connector/table/0/1_value_\\d+\\.gz");
+        assert new String(content.getAllValues().get(1), UTF_8).equals(validArrJson);
+        assert file.getAllValues().get(2).matches("connector/table/0/2_key_\\d+\\.gz");
+        assert new String(content.getAllValues().get(2), UTF_8).equals(validArrJson);
+        assert file.getAllValues().get(3).matches("connector/table/0/2_value_\\d+\\.gz");
         assert new String(content.getAllValues().get(3), UTF_8).equals(invalidJson);
     }
 }
