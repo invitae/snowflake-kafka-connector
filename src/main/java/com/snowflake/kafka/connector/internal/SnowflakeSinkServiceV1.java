@@ -7,8 +7,11 @@ import com.snowflake.kafka.connector.records.SnowflakeJsonSchema;
 import com.snowflake.kafka.connector.records.SnowflakeMetadataConfig;
 import com.snowflake.kafka.connector.records.SnowflakeRecordContent;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.sink.SinkRecord;
 
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectOutputStream;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -401,31 +404,18 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
       //ignore ingested files
       if (record.kafkaOffset() > processedOffset.get())
       {
-        SinkRecord snowflakeRecord;
-        if (!(record.value() instanceof SnowflakeRecordContent))
+        SinkRecord snowflakeRecord = record;
+        if (shouldConvertContent(snowflakeRecord.value()))
         {
-          SnowflakeRecordContent newSFContent;
-          try
-          {
-            newSFContent = new SnowflakeRecordContent(record.valueSchema(), record.value());
-          } catch (Exception e)
-          {
-            newSFContent = new SnowflakeRecordContent();
-            logError("native content parser error:\n{}", e.getMessage());
-          }
-          // create new sinkRecord
-          snowflakeRecord = new SinkRecord(record.topic(), record.kafkaPartition(), record.keySchema(), record.key(), new SnowflakeJsonSchema(),
-            newSFContent, record.kafkaOffset(), record.timestamp(), record.timestampType(), record.headers());
+          snowflakeRecord = handleNativeRecord(snowflakeRecord, false);
         }
-        else
+        if (shouldConvertContent(snowflakeRecord.key()))
         {
-          snowflakeRecord = record;
+          snowflakeRecord = handleNativeRecord(snowflakeRecord, true);
         }
 
         //broken record
-        if (((SnowflakeRecordContent) snowflakeRecord.value()).isBroken()
-                || ((snowflakeRecord.key() instanceof SnowflakeRecordContent)
-                  && ((SnowflakeRecordContent) snowflakeRecord.key()).isBroken()))
+        if (isRecordBroken(snowflakeRecord))
         {
           writeBrokenDataToTableStage(snowflakeRecord);
           //don't move committed offset in this case
@@ -459,6 +449,53 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
 
     }
 
+    private boolean shouldConvertContent(final Object content)
+    {
+      return content != null && !(content instanceof SnowflakeRecordContent);
+    }
+
+    private boolean isRecordBroken(final SinkRecord record)
+    {
+      return isContentBroken(record.value()) || isContentBroken(record.key());
+    }
+
+    private boolean isContentBroken(final Object content)
+    {
+      return content != null && ((SnowflakeRecordContent) content).isBroken();
+    }
+
+    private SinkRecord handleNativeRecord(SinkRecord record, boolean isKey)
+    {
+      SnowflakeRecordContent newSFContent;
+      Schema schema = isKey ? record.keySchema() : record.valueSchema();
+      Object content = isKey ? record.key() : record.value();
+      try
+      {
+        newSFContent = new SnowflakeRecordContent(schema, content);
+      } catch (Exception e)
+      {
+        logError("Native content parser error:\n{}", e.getMessage());
+        try {
+          // try to serialize this object and send that as broken record
+          ByteArrayOutputStream out = new ByteArrayOutputStream();
+          ObjectOutputStream os = new ObjectOutputStream(out);
+          os.writeObject(content);
+          newSFContent = new SnowflakeRecordContent(out.toByteArray());
+        } catch (Exception serializeError)
+        {
+          logError("Failed to convert broken native record to byte data:\n{}", serializeError.getMessage());
+          throw e;
+        }
+      }
+      // create new sinkRecord
+      Schema keySchema = isKey ? new SnowflakeJsonSchema() : record.keySchema();
+      Object keyContent = isKey ? newSFContent : record.key();
+      Schema valueSchema = isKey ? record.valueSchema() : new SnowflakeJsonSchema();
+      Object valueContent = isKey ? record.value() : newSFContent;
+      return new SinkRecord(record.topic(), record.kafkaPartition(), keySchema, keyContent,
+        valueSchema, valueContent, record.kafkaOffset(), record.timestamp(), record.timestampType(), record.headers());
+    }
+
     private boolean shouldFlush()
     {
       return (System.currentTimeMillis() - this.previousFlushTimeStamp) >= (getFlushTime() * 1000);
@@ -486,24 +523,31 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
 
     private void writeBrokenDataToTableStage(SinkRecord record)
     {
-      if (record.key() instanceof SnowflakeRecordContent) {
-        SnowflakeRecordContent keyContent = (SnowflakeRecordContent) record.key();
-        writeBrokenRecordContentToTableStage(keyContent, "key", record.kafkaOffset());
+      SnowflakeRecordContent key = (SnowflakeRecordContent) record.key();
+      SnowflakeRecordContent value = (SnowflakeRecordContent) record.value();
+      if (key != null)
+      {
+        String fileName = FileNameUtils.brokenRecordFileName(prefix, record.kafkaOffset(), true);
+        conn.putToTableStage(tableName, fileName, snowflakeContentToByteArray(key));
       }
-
-      SnowflakeRecordContent valueContent = (SnowflakeRecordContent) record.value();
-      writeBrokenRecordContentToTableStage(valueContent, "value", record.kafkaOffset());
+      if (value != null)
+      {
+        String fileName = FileNameUtils.brokenRecordFileName(prefix, record.kafkaOffset(), false);
+        conn.putToTableStage(tableName, fileName, snowflakeContentToByteArray(value));
+      }
     }
 
-    private void writeBrokenRecordContentToTableStage(SnowflakeRecordContent content, String contentPrefix, long offset) {
-      if (content.isBroken()) {
-        String fileName = FileNameUtils.brokenRecordFileName(prefix + contentPrefix + "_raw_", offset);
-        conn.putToTableStage(tableName, fileName, content.getBrokenData());
-      } else if (content.getData() != null && content.getData().length > 0) {
-        String fileName = FileNameUtils.brokenRecordFileName(prefix + contentPrefix + "_json_", offset);
-        // Only for single json object per record
-        conn.putToTableStage(tableName, fileName, content.getData()[0].toString().getBytes());
+    private byte[] snowflakeContentToByteArray(SnowflakeRecordContent content)
+    {
+      if (content == null)
+      {
+        return null;
       }
+      if (content.isBroken())
+      {
+        return content.getBrokenData();
+      }
+      return Arrays.asList(content.getData()).toString().getBytes();
     }
 
     private long getOffset()
@@ -513,7 +557,7 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
         return committedOffset.get();
       }
 
-      Set<String> fileNamesCopy = new HashSet<>();
+      List<String> fileNamesCopy = new ArrayList<>();
       fileListLock.lock();
       try
       {
