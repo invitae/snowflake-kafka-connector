@@ -98,6 +98,8 @@ mkdir -p $APACHE_LOG_PATH
 rm $APACHE_LOG_PATH/zookeeper.log $APACHE_LOG_PATH/kafka.log $APACHE_LOG_PATH/kc.log || true
 rm -rf /tmp/kafka-logs /tmp/zookeeper || true
 
+compile_protobuf_converter_and_data $TEST_SET $CONFLUENT_FOLDER_NAME
+
 trap "pkill -9 -P $$" SIGINT SIGTERM EXIT
 
 echo -e "\n=== Start Zookeeper ==="
@@ -128,7 +130,7 @@ create_connectors_with_salt $SNOWFLAKE_CREDENTIAL_FILE $NAME_SALT $LOCAL_IP $KC_
 # Send test data and verify DB result from Python
 python3 test_verify.py $LOCAL_IP:$SNOWFLAKE_KAFKA_PORT http://$LOCAL_IP:$SC_PORT $TEST_SET $NAME_SALT $PRESSURE
 testError=$?
-delete_connectors_with_salt $NAME_SALT $LOCAL_IP $KC_PORT
+# delete_connectors_with_salt $NAME_SALT $LOCAL_IP $KC_PORT
 python3 test_verify.py $LOCAL_IP:$SNOWFLAKE_KAFKA_PORT http://$LOCAL_IP:$SC_PORT clean $NAME_SALT $PRESSURE
 
 ##### Following commented code is used to track thread leak

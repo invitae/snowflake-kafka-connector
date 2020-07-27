@@ -99,6 +99,10 @@ public class RecordService extends Logging
    */
   public String processRecord(SinkRecord record)
   {
+    if (record.value() == null || record.valueSchema() == null)
+    {
+      throw SnowflakeErrors.ERROR_5016.getException();
+    }
     if (!record.valueSchema().name().equals(SnowflakeJsonSchema.NAME))
     {
       throw SnowflakeErrors.ERROR_0009.getException();
@@ -179,8 +183,18 @@ public class RecordService extends Logging
       }
 
       SnowflakeRecordContent keyContent = (SnowflakeRecordContent) record.key();
-      // Applied only for single key content per record
-      key = keyContent.getData()[0];
+
+      JsonNode[] keyData = keyContent.getData();
+      if (keyData.length == 1)
+      {
+        key = keyContent.getData()[0];
+      }
+      else
+      {
+        ArrayNode keyNode = MAPPER.createArrayNode();
+        keyNode.addAll(Arrays.asList(keyData));
+        key = keyNode;
+      }
 
       if (keyContent.getSchemaID() != SnowflakeRecordContent.NON_AVRO_SCHEMA)
       {
@@ -255,9 +269,9 @@ public class RecordService extends Logging
           }
           return JsonNodeFactory.instance.numberNode((Integer) value);
         case INT64:
-          String schemaName = schema.name();
-          if(Timestamp.LOGICAL_NAME.equals(schemaName)){
-            return JsonNodeFactory.instance.numberNode(Timestamp.fromLogical(schema, (java.util.Date) value));
+          if (schema != null && Timestamp.LOGICAL_NAME.equals(schema.name())) {
+            return JsonNodeFactory.instance.numberNode(
+                Timestamp.fromLogical(schema, (java.util.Date) value));
           }
           return JsonNodeFactory.instance.numberNode((Long) value);
         case FLOAT32:
@@ -270,7 +284,7 @@ public class RecordService extends Logging
           CharSequence charSeq = (CharSequence) value;
           return JsonNodeFactory.instance.textNode(charSeq.toString());
         case BYTES:
-          if (Decimal.LOGICAL_NAME.equals(schema.name())) {
+          if (schema != null && Decimal.LOGICAL_NAME.equals(schema.name())) {
             return JsonNodeFactory.instance.numberNode((BigDecimal) value);
           }
 
