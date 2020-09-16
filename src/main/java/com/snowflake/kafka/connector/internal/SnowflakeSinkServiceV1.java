@@ -18,12 +18,13 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
 
 class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
 {
   private static final long ONE_HOUR = 60 * 60 * 1000L;
   private static final long TEN_MINUTES = 10 * 60 * 1000L;
-  private static final long CLEAN_TIME = 60 * 1000L; //one minutes
+  protected static final long CLEAN_TIME = 60 * 1000L; //one minutes
 
   private long flushTime; // in seconds
   private long fileSize;
@@ -119,11 +120,16 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
     }
     else
     {
-      logError("Failed to find offset of Topic: {}, Partition: {}, sink " +
-        "service hasn't been initialized", topicPartition.topic(),
-        topicPartition.partition());
+      logWarn("Topic: {} Partition: {} hasn't been initialized to get offset",
+        topicPartition.topic(), topicPartition.partition());
       return 0;
     }
+  }
+
+  @Override
+  public int getPartitionCount()
+  {
+    return pipes.size();
   }
 
   // used for testing only
@@ -168,6 +174,12 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
       (name, context) -> context.close()
     );
     pipes.clear();
+  }
+
+  @Override
+  public void setIsStoppedToTrue()
+  {
+    this.isStopped = true; // release all cleaner and flusher threads
   }
 
   @Override
@@ -298,6 +310,7 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
 
     //make the initialization lazy
     private boolean hasInitialized = false;
+    private boolean forceCleanerFileReset = false;
 
 
     private ServiceContext(String tableName, String stageName,
@@ -349,6 +362,30 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
 
     }
 
+    private boolean resetCleanerFiles() {
+      try {
+        logWarn("Resetting cleaner files {}", pipeName);
+        // list stage again and try to clean the files leaked on stage
+        // this can throw unchecked, it needs to be wrapped in a try/catch
+        // if it fails again do not reset forceCleanerFileReset
+        List<String> tmpCleanerFileNames = conn.listStage(stageName, prefix);
+        fileListLock.lock();
+        try {
+          cleanerFileNames.addAll(tmpCleanerFileNames);
+          cleanerFileNames = cleanerFileNames.stream().distinct().collect(Collectors.toList());
+        } finally {
+          fileListLock.unlock();
+        }
+        forceCleanerFileReset = false;
+        logWarn("Resetting cleaner files {} done", pipeName);
+      } catch (Throwable t) {
+        logWarn("Cleaner file reset encountered an error:\n{}", t.getMessage());
+      }
+
+      return forceCleanerFileReset;
+    }
+
+
     private void startCleaner()
     {
       // when cleaner start, scan stage for all files of this pipe
@@ -371,6 +408,11 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
             try
             {
               Thread.sleep(CLEAN_TIME);
+
+              if (forceCleanerFileReset && resetCleanerFiles()) {
+                continue;
+              }
+
               checkStatus();
               if (System.currentTimeMillis() - startTime > ONE_HOUR)
               {
@@ -380,6 +422,13 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
             {
               logInfo("Cleaner terminated by an interrupt:\n{}", e.getMessage());
               break;
+            } catch (Exception e)
+            {
+              logWarn("Cleaner encountered an exception {}:\n{}\n{}",
+                e.getClass(), e.getMessage(), e.getStackTrace());
+
+              forceCleanerFileReset = true;
+
             }
           }
         }
