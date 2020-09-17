@@ -45,6 +45,12 @@ public interface SnowflakeSinkService
   long getOffset(TopicPartition topicPartition);
 
   /**
+   * get the number of partitions assigned to this sink service
+   * @return number of partitions
+   */
+  int getPartitionCount();
+
+  /**
    * used for testing only
    */
   void callAllGetOffset();
@@ -59,6 +65,11 @@ public interface SnowflakeSinkService
    * @param partitions a list of topic partition
    */
   void close(Collection<TopicPartition> partitions);
+
+  /**
+   * close all cleaner thread but have no effect on sink service context
+   */
+  void setIsStoppedToTrue();
 
   /**
    * retrieve sink service status
