@@ -90,18 +90,34 @@ public class SnowflakeConnectionServiceV1 extends Logging
     checkConnection();
     InternalUtils.assertNotEmpty("tableName", tableName);
 
+    // add insert_time column
+    PreparedStatement stmt = null;
     String query = "alter table identifier(?) add column insert_time timestamp";
     try
     {
-      PreparedStatement stmt = conn.prepareStatement(query);
+      stmt = conn.prepareStatement(query);
       stmt.setString(1, tableName);
       stmt.execute();
-      stmt.close();
-    } catch (SQLException e)
+    }
+    catch (SQLException e)
     {
-      // checking column exists if the method will be populated later
+      // alter table should be idempotent to prevent errors
+      // if there will be another alters statements
       if (!"column 'INSERT_TIME' already exists".equals(e.getMessage())) {
         throw SnowflakeErrors.ERROR_2007.getException(e);
+      }
+    }
+    finally
+    {
+      if(stmt != null)
+      {
+        try
+        {
+          stmt.close();
+        } catch (SQLException e)
+        {
+          e.printStackTrace();
+        }
       }
     }
 
