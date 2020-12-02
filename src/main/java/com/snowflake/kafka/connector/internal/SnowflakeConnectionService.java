@@ -7,6 +7,7 @@ public interface SnowflakeConnectionService
 {
   /**
    * Create a table with three variant columns: RECORD_METADATA, RECORD_KEY and RECORD_CONTENT
+   * and a timestamp column: INSERT_TIME
    *
    * @param tableName a string represents table name
    * @param overwrite if true, execute "create or replace table" query;

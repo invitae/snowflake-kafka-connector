@@ -55,12 +55,14 @@ public class SnowflakeConnectionServiceV1 extends Logging
     if (overwrite)
     {
       query = "create or replace table identifier(?) (record_metadata " +
-        "variant, record_key variant, record_content variant)";
+        "variant, record_key variant, record_content variant, " +
+        "insert_time timestamp default current_timestamp)";
     }
     else
     {
       query = "create table if not exists identifier(?) (record_metadata " +
-        "variant, record_key variant, record_content variant)";
+        "variant, record_key variant, record_content variant, " +
+        "insert_time timestamp default current_timestamp)";
     }
     try
     {
