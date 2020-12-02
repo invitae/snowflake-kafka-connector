@@ -89,9 +89,8 @@ public class SnowflakeConnectionServiceV1 extends Logging
   public void alterTable(String tableName) {
     checkConnection();
     InternalUtils.assertNotEmpty("tableName", tableName);
-    // FIXME: SQL have to be idempotent
-    String query = "alter table identifier(?) " +
-            " add column insert_time timestamp default current_timestamp";
+
+    String query = "alter table identifier(?) add column insert_time timestamp";
     try
     {
       PreparedStatement stmt = conn.prepareStatement(query);
@@ -100,11 +99,14 @@ public class SnowflakeConnectionServiceV1 extends Logging
       stmt.close();
     } catch (SQLException e)
     {
-      throw SnowflakeErrors.ERROR_2007.getException(e);
+      // checking column exists if the method will be populated later
+      if (!"column 'INSERT_TIME' already exists".equals(e.getMessage())) {
+        throw SnowflakeErrors.ERROR_2007.getException(e);
+      }
     }
 
     logInfo("alter table {}", tableName);
-    // getTelemetryClient().reportKafkaCreateTable(tableName);
+    getTelemetryClient().reportKafkaCreateTable(tableName);
   }
 
   @Override

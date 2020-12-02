@@ -762,10 +762,10 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
       {
         if (!conn.isPipeCompatible(tableName, stageName, pipeName))
         {
-          throw SnowflakeErrors.ERROR_5005.getException("pipe name: " + pipeName,
-            conn.getTelemetryClient());
+          conn.createPipe(tableName, stageName, pipeName, true);
+        } else {
+          logInfo("pipe {}, recovered from existing pipe", pipeName);
         }
-        logInfo("pipe {}, recovered from existing pipe", pipeName);
       }
       else
       {
