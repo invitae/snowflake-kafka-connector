@@ -86,6 +86,28 @@ public class SnowflakeConnectionServiceV1 extends Logging
   }
 
   @Override
+  public void alterTable(String tableName) {
+    checkConnection();
+    InternalUtils.assertNotEmpty("tableName", tableName);
+    // FIXME: SQL have to be idempotent
+    String query = "alter table identifier(?) " +
+            " add column insert_time timestamp default current_timestamp";
+    try
+    {
+      PreparedStatement stmt = conn.prepareStatement(query);
+      stmt.setString(1, tableName);
+      stmt.execute();
+      stmt.close();
+    } catch (SQLException e)
+    {
+      throw SnowflakeErrors.ERROR_2007.getException(e);
+    }
+
+    logInfo("alter table {}", tableName);
+    // getTelemetryClient().reportKafkaCreateTable(tableName);
+  }
+
+  @Override
   public void createPipe(final String tableName, final String stageName,
                          final String pipeName, final boolean overwrite)
   {
@@ -283,6 +305,7 @@ public class SnowflakeConnectionServiceV1 extends Logging
       boolean hasKey = false;
       boolean hasMeta = false;
       boolean hasContent = false;
+      boolean hasInsertTime = false;
       boolean allNullable = true;
       while (result.next())
       {
@@ -306,6 +329,12 @@ public class SnowflakeConnectionServiceV1 extends Logging
               hasContent = true;
             }
             break;
+          case "INSERT_TIME":
+            if(result.getString(2).equals("TIMESTAMP"))
+            {
+              hasInsertTime = true;
+            }
+            break;
           default:
             if(result.getString(4).equals("N"))
             {
@@ -314,7 +343,7 @@ public class SnowflakeConnectionServiceV1 extends Logging
 
         }
       }
-      compatible = hasKey && hasMeta && hasContent && allNullable;
+      compatible = hasKey && hasMeta && hasContent && hasInsertTime && allNullable;
     } catch (SQLException e)
     {
       logDebug("table {} doesn't exist", tableName);

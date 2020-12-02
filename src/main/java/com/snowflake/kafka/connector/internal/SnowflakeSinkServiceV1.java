@@ -799,14 +799,24 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
       //create table if not exists
       if (conn.tableExist(tableName))
       {
-        if (conn.isTableCompatible(tableName))
-        {
-          logInfo("Using existing table {}.", tableName);
-          telemetryService.reportKafkaReuseTable(tableName);
-        }
-        else
-        {
-          throw SnowflakeErrors.ERROR_5003.getException("table name: " + tableName, telemetryService);
+        boolean compatible = false;
+        boolean updated = false;
+        while(!compatible || !updated) {
+          if (conn.isTableCompatible(tableName))
+          {
+            logInfo("Using existing table {}.", tableName);
+            telemetryService.reportKafkaReuseTable(tableName);
+            compatible = true;
+          }
+          else if (!updated)
+          {
+            conn.alterTable(tableName);
+            updated = true;
+          }
+          else
+          {
+            throw SnowflakeErrors.ERROR_5003.getException("table name: " + tableName, telemetryService);
+          }
         }
       }
       else

@@ -23,6 +23,13 @@ public interface SnowflakeConnectionService
   void createTable(String tableName);
 
   /**
+   * alter table if not compatible
+   *
+   * @param tableName table name
+   */
+  void alterTable(String tableName);
+
+  /**
    * create a snowpipe
    *
    * @param pipeName  pipe name
