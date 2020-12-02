@@ -801,7 +801,7 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
       {
         boolean compatible = false; // true - if table compatible
         boolean modified = false; // true - if table modified/altered
-        while(!compatible || !modified) {
+        while(!compatible) {
           if (conn.isTableCompatible(tableName))
           {
             logInfo("Using existing table {}.", tableName);
