@@ -125,7 +125,7 @@ public class ConnectionServiceIT extends Logging
     assert conn.tableExist(tableName);
     //insert some value
     TestUtils.executeQuery(
-      "insert into " + tableName + " values(123,123)"
+      "insert into " + tableName + " values(123,123,123,current_timestamp)"
     );
     ResultSet resultSet = TestUtils.showTable(tableName);
     //value inserted
