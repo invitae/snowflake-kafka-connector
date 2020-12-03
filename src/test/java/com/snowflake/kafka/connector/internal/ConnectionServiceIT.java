@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
-public class ConnectionServiceIT
+public class ConnectionServiceIT extends Logging
 {
   private final SnowflakeConnectionService conn = TestUtils.getConnectionService();
 
@@ -318,12 +318,14 @@ public class ConnectionServiceIT
   public void testTableCompatible()
   {
     TestUtils.executeQuery(
-      "create or replace table " + tableName + "(record_content variant, record_metadata variant, other int)"
+      "create or replace table " + tableName +
+      "(record_content variant, record_metadata variant, record_key variant, insert_time timestamp default current_timestamp, other int)"
     );
     assert conn.isTableCompatible(tableName);
 
     TestUtils.executeQuery(
-      "create or replace table " + tableName + "(record_content variant, record_metadata string, other int)"
+      "create or replace table " + tableName +
+      "(record_content variant, record_key variant, record_metadata string, other int)"
     );
     assert !conn.isTableCompatible(tableName);
 
@@ -333,12 +335,30 @@ public class ConnectionServiceIT
     assert !conn.isTableCompatible(tableName);
 
     TestUtils.executeQuery(
-      "create or replace table " + tableName + "(record_content variant, record_metadata variant, other int not null)"
+      "create or replace table " + tableName +
+      "(record_content variant, record_metadata variant, record_key variant, insert_time timestamp default current_timestamp, other int not null)"
     );
     assert !conn.isTableCompatible(tableName);
   }
 
 
+  @Test
+  public void testAlterTable()
+  {
+      // table missing 'insert_at' column should have it added
+    TestUtils.executeQuery(
+      "create or replace table " + tableName +
+      "(record_content variant, record_key variant, record_metadata string, other int)"
+    );
+    conn.alterTable(tableName);
+    Map<String, ArrayList<String>> res = TestUtils.descTableCols(tableName);
+    assert res.containsKey("INSERT_TIME");
+
+    // should be idempotent
+    conn.alterTable(tableName);
+    res = TestUtils.descTableCols(tableName);
+    assert res.containsKey("INSERT_TIME");
+  }
 
   @Test
   public void testConnectionFunction()
