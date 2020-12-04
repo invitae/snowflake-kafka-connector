@@ -322,7 +322,7 @@ public class ConnectionServiceIT extends Logging
   {
     TestUtils.executeQuery(
       "create or replace table " + tableName +
-      "(record_content variant, record_metadata variant, record_key variant, insert_time timestamp default current_timestamp, other int)"
+      "(record_content variant, record_metadata variant, record_key variant, insert_time timestamp, other int)"
     );
     assert conn.isTableCompatible(tableName);
 
@@ -339,7 +339,7 @@ public class ConnectionServiceIT extends Logging
 
     TestUtils.executeQuery(
       "create or replace table " + tableName +
-      "(record_content variant, record_metadata variant, record_key variant, insert_time timestamp default current_timestamp, other int not null)"
+      "(record_content variant, record_metadata variant, record_key variant, insert_time timestamp, other int not null)"
     );
     assert !conn.isTableCompatible(tableName);
   }
