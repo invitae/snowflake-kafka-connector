@@ -29,10 +29,7 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Random;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -221,6 +218,42 @@ public class TestUtils
     String query = "select * from " + tableName;
 
     return executeQuery(query);
+  }
+
+  /**
+   * describe a table
+   */
+  static ResultSet descTable(String tableName)
+  {
+    String query = "desc table " + tableName;
+
+    return executeQuery(query);
+  }
+
+  /**
+   *
+   * @param tableName
+   * @return Map of column names to list containing name, type, kind, null, default column parameters
+   */
+  static Map<String, ArrayList<String>> descTableCols(String tableName)
+  {
+    ResultSet result = descTable(tableName);
+    Map<String, ArrayList<String>> Columns = new HashMap<>();
+    try
+    {
+      while(result.next()) {
+        ArrayList<String> row = new ArrayList<>();
+        for (int i = 1; i <= 5; i++) {
+          row.add(result.getString(i));
+        }
+        Columns.put(result.getString(1), row);
+      }
+    }
+    catch (Exception e)
+    {
+      throw new RuntimeException(e);
+    }
+    return Columns;
   }
 
   static String getDesRsaKey()

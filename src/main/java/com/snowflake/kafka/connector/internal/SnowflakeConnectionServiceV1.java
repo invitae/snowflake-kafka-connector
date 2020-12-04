@@ -55,12 +55,12 @@ public class SnowflakeConnectionServiceV1 extends Logging
     if (overwrite)
     {
       query = "create or replace table identifier(?) (record_metadata " +
-        "variant, record_key variant, record_content variant)";
+        "variant, record_key variant, record_content variant, insert_time timestamp)";
     }
     else
     {
       query = "create table if not exists identifier(?) (record_metadata " +
-        "variant, record_key variant, record_content variant)";
+        "variant, record_key variant, record_content variant, insert_time timestamp)";
     }
     try
     {
@@ -81,6 +81,46 @@ public class SnowflakeConnectionServiceV1 extends Logging
   public void createTable(final String tableName)
   {
     createTable(tableName, false);
+  }
+
+  @Override
+  public void alterTable(String tableName) {
+    checkConnection();
+    InternalUtils.assertNotEmpty("tableName", tableName);
+
+    // add insert_time column
+    PreparedStatement stmt = null;
+    String query = "alter table identifier(?) add column insert_time timestamp";
+    try
+    {
+      stmt = conn.prepareStatement(query);
+      stmt.setString(1, tableName);
+      stmt.execute();
+    }
+    catch (SQLException e)
+    {
+      // alter table should be idempotent to prevent errors
+      // if there will be another alters statements
+      if (e.getMessage() == null || !e.getMessage().contains("column 'INSERT_TIME' already exists")) {
+        throw SnowflakeErrors.ERROR_2007.getException(e);
+      }
+    }
+    finally
+    {
+      if(stmt != null)
+      {
+        try
+        {
+          stmt.close();
+        } catch (SQLException e)
+        {
+          e.printStackTrace();
+        }
+      }
+    }
+
+    logInfo("alter table {}", tableName);
+    getTelemetryClient().reportKafkaCreateTable(tableName);
   }
 
   @Override
@@ -281,6 +321,7 @@ public class SnowflakeConnectionServiceV1 extends Logging
       boolean hasKey = false;
       boolean hasMeta = false;
       boolean hasContent = false;
+      boolean hasInsertTime = false;
       boolean allNullable = true;
       while (result.next())
       {
@@ -304,6 +345,12 @@ public class SnowflakeConnectionServiceV1 extends Logging
               hasContent = true;
             }
             break;
+          case "INSERT_TIME":
+            if(result.getString(2).equals("TIMESTAMP_NTZ(9)"))
+            {
+              hasInsertTime = true;
+            }
+            break;
           default:
             if(result.getString(4).equals("N"))
             {
@@ -312,7 +359,7 @@ public class SnowflakeConnectionServiceV1 extends Logging
 
         }
       }
-      compatible = hasKey && hasMeta && hasContent && allNullable;
+      compatible = hasKey && hasMeta && hasContent && hasInsertTime && allNullable;
     } catch (SQLException e)
     {
       logDebug("table {} doesn't exist", tableName);
@@ -776,7 +823,8 @@ public class SnowflakeConnectionServiceV1 extends Logging
   private String pipeDefinition(String tableName, String stageName)
   {
     return "copy into " + tableName +
-      "(RECORD_METADATA, RECORD_KEY, RECORD_CONTENT) from (select $1:meta, $1:key, $1:content from"
+      "(RECORD_METADATA, RECORD_KEY, RECORD_CONTENT, INSERT_TIME)"
+      + " from (select $1:meta, $1:key, $1:content, current_timestamp() from"
       + " @" + stageName + " t) file_format = (type = 'json')";
 
   }

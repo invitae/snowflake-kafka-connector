@@ -762,10 +762,10 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
       {
         if (!conn.isPipeCompatible(tableName, stageName, pipeName))
         {
-          throw SnowflakeErrors.ERROR_5005.getException("pipe name: " + pipeName,
-            conn.getTelemetryClient());
+          conn.createPipe(tableName, stageName, pipeName, true);
+        } else {
+          logInfo("pipe {}, recovered from existing pipe", pipeName);
         }
-        logInfo("pipe {}, recovered from existing pipe", pipeName);
       }
       else
       {
@@ -799,14 +799,24 @@ class SnowflakeSinkServiceV1 extends Logging implements SnowflakeSinkService
       //create table if not exists
       if (conn.tableExist(tableName))
       {
-        if (conn.isTableCompatible(tableName))
-        {
-          logInfo("Using existing table {}.", tableName);
-          telemetryService.reportKafkaReuseTable(tableName);
-        }
-        else
-        {
-          throw SnowflakeErrors.ERROR_5003.getException("table name: " + tableName, telemetryService);
+        boolean compatible = false; // true - if table compatible
+        boolean modified = false; // true - if table modified/altered
+        while(!compatible) {
+          if (conn.isTableCompatible(tableName))
+          {
+            logInfo("Using existing table {}.", tableName);
+            telemetryService.reportKafkaReuseTable(tableName);
+            compatible = true;
+          }
+          else if (!modified)
+          {
+            conn.alterTable(tableName);
+            modified = true;
+          }
+          else
+          {
+            throw SnowflakeErrors.ERROR_5003.getException("table name: " + tableName, telemetryService);
+          }
         }
       }
       else
