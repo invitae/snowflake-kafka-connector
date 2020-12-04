@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
-public class ConnectionServiceIT
+public class ConnectionServiceIT extends Logging
 {
   private final SnowflakeConnectionService conn = TestUtils.getConnectionService();
 
@@ -23,7 +23,10 @@ public class ConnectionServiceIT
   private final String tableName1 = TestUtils.randomTableName();
   private final String stageName1 = TestUtils.randomStageName();
 
-  @Test
+  // Tests with an encrypted private key. Re-enable when we configure
+  // a dedicated test user in snowflake with both unecrypted and encrypted
+  // private keys
+  @org.junit.Ignore
   public void testEncryptedKey()
   {
     //no exception
@@ -125,7 +128,7 @@ public class ConnectionServiceIT
     assert conn.tableExist(tableName);
     //insert some value
     TestUtils.executeQuery(
-      "insert into " + tableName + " values(123,123)"
+      "insert into " + tableName + " values(123,123,123,current_timestamp)"
     );
     ResultSet resultSet = TestUtils.showTable(tableName);
     //value inserted
@@ -318,12 +321,14 @@ public class ConnectionServiceIT
   public void testTableCompatible()
   {
     TestUtils.executeQuery(
-      "create or replace table " + tableName + "(record_content variant, record_metadata variant, other int)"
+      "create or replace table " + tableName +
+      "(record_content variant, record_metadata variant, record_key variant, insert_time timestamp default current_timestamp, other int)"
     );
     assert conn.isTableCompatible(tableName);
 
     TestUtils.executeQuery(
-      "create or replace table " + tableName + "(record_content variant, record_metadata string, other int)"
+      "create or replace table " + tableName +
+      "(record_content variant, record_key variant, record_metadata string, other int)"
     );
     assert !conn.isTableCompatible(tableName);
 
@@ -333,12 +338,30 @@ public class ConnectionServiceIT
     assert !conn.isTableCompatible(tableName);
 
     TestUtils.executeQuery(
-      "create or replace table " + tableName + "(record_content variant, record_metadata variant, other int not null)"
+      "create or replace table " + tableName +
+      "(record_content variant, record_metadata variant, record_key variant, insert_time timestamp default current_timestamp, other int not null)"
     );
     assert !conn.isTableCompatible(tableName);
   }
 
 
+  @Test
+  public void testAlterTable()
+  {
+      // table missing 'insert_at' column should have it added
+    TestUtils.executeQuery(
+      "create or replace table " + tableName +
+      "(record_content variant, record_key variant, record_metadata string, other int)"
+    );
+    conn.alterTable(tableName);
+    Map<String, ArrayList<String>> res = TestUtils.descTableCols(tableName);
+    assert res.containsKey("INSERT_TIME");
+
+    // should be idempotent
+    conn.alterTable(tableName);
+    res = TestUtils.descTableCols(tableName);
+    assert res.containsKey("INSERT_TIME");
+  }
 
   @Test
   public void testConnectionFunction()
