@@ -103,7 +103,7 @@ public class SnowflakeConnectionServiceV1 extends Logging
     {
       // alter table should be idempotent to prevent errors
       // if there will be another alters statements
-      if (!e.getMessage().contains("column 'INSERT_TIME' already exists")) {
+      if (e.getMessage() == null || !e.getMessage().contains("column 'INSERT_TIME' already exists")) {
         throw SnowflakeErrors.ERROR_2007.getException(e);
       }
     }
