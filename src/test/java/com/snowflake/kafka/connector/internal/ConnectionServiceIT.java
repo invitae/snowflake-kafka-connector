@@ -23,7 +23,10 @@ public class ConnectionServiceIT extends Logging
   private final String tableName1 = TestUtils.randomTableName();
   private final String stageName1 = TestUtils.randomStageName();
 
-  @Test
+  // Tests with an encrypted private key. Re-enable when we configure
+  // a dedicated test user in snowflake with both unecrypted and encrypted
+  // private keys
+  @org.junit.Ignore
   public void testEncryptedKey()
   {
     //no exception
