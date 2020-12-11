@@ -107,10 +107,6 @@ public class SnowflakeAvroConverter extends SnowflakeConverter
   @Override
   public SchemaAndValue toConnectData(final String s, final byte[] bytes)
   {
-    return parseAsAvro(s, bytes);
-  }
-
-  SchemaAndValue parseAsAvro(final String s, final byte[] bytes) {
     if(bytes == null)
     {
       return new SchemaAndValue(new SnowflakeJsonSchema(), new SnowflakeRecordContent());
