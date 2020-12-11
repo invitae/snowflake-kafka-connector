@@ -112,8 +112,7 @@ public class ConverterTest
     SchemaAndValue input = converter.toConnectData("test", client.getData());
     SnowflakeRecordContent content = (SnowflakeRecordContent) input.value();
     assert content.getData().length == 1;
-    assert content.getData()[0].asText().equals(mapper.readTree("{\"int" +
-      "\":1234}").asText());
+    assert content.getData()[0].equals(mapper.readTree("{\"int\":1234}"));
 
     //null value
     input = converter.toConnectData("test",null);
