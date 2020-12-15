@@ -15,6 +15,7 @@ import java.io.StringWriter;
 import java.security.PrivateKey;
 import java.security.Security;
 
+@org.junit.Ignore
 public class FIPSTest
 {
   @Test

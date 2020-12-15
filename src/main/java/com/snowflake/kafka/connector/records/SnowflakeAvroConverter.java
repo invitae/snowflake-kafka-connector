@@ -41,11 +41,11 @@ import java.util.Map;
 
 public class SnowflakeAvroConverter extends SnowflakeConverter
 {
-  private SchemaRegistryClient schemaRegistry = null;
+  SchemaRegistryClient schemaRegistry = null;
 
   public static final String BREAK_ON_SCHEMA_REGISTRY_ERROR = "break.on.schema.registry.error";
   // By default, we don't break when schema registry is not found
-  private boolean breakOnSchemaRegistryError = false;
+  boolean breakOnSchemaRegistryError = false;
 
   @Override
   public void configure(final Map<String, ?> configs, final boolean isKey)
@@ -116,6 +116,7 @@ public class SnowflakeAvroConverter extends SnowflakeConverter
     try
     {
       buffer = ByteBuffer.wrap(bytes);
+      // check for magic byte
       if (buffer.get() != 0)
       {
         throw SnowflakeErrors.ERROR_0010.getException("unknown bytes");
@@ -123,7 +124,7 @@ public class SnowflakeAvroConverter extends SnowflakeConverter
       id = buffer.getInt();
     } catch (Exception e)
     {
-      return logErrorAndReturnBrokenRecord(e, bytes);
+      return handleError(e, bytes);
     }
 
     // If there is any error while getting schema from schema registry,
@@ -140,7 +141,7 @@ public class SnowflakeAvroConverter extends SnowflakeConverter
       }
       else
       {
-        return logErrorAndReturnBrokenRecord(e, bytes);
+        return handleError(e, bytes);
       }
     }
 
@@ -153,8 +154,13 @@ public class SnowflakeAvroConverter extends SnowflakeConverter
         new SnowflakeRecordContent(parseAvroWithSchema(data, schema), id));
     } catch (Exception e)
     {
-      return logErrorAndReturnBrokenRecord(e, bytes);
+      return handleError(e, bytes);
     }
+  }
+
+  SchemaAndValue handleError(final Exception e, final byte[] bytes)
+  {
+    return logErrorAndReturnBrokenRecord(e, bytes);
   }
 
   private SchemaAndValue logErrorAndReturnBrokenRecord(final Exception e, final byte[] bytes)
@@ -172,7 +178,7 @@ public class SnowflakeAvroConverter extends SnowflakeConverter
    * @param schema avro schema
    * @return JsonNode  array
    */
-  private JsonNode parseAvroWithSchema(final byte[] bytes, Schema schema)
+  JsonNode parseAvroWithSchema(final byte[] bytes, Schema schema)
   {
     GenericDatumReader<GenericRecord> reader = new GenericDatumReader<>(schema);
     InputStream input = new ByteArrayInputStream(bytes);

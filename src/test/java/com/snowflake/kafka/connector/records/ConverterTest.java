@@ -112,13 +112,38 @@ public class ConverterTest
     SchemaAndValue input = converter.toConnectData("test", client.getData());
     SnowflakeRecordContent content = (SnowflakeRecordContent) input.value();
     assert content.getData().length == 1;
-    assert content.getData()[0].asText().equals(mapper.readTree("{\"int" +
-      "\":1234}").asText());
+    assert content.getData()[0].equals(mapper.readTree("{\"int\":1234}"));
 
     //null value
     input = converter.toConnectData("test",null);
     assert ((SnowflakeRecordContent) input.value()).getData()[0].toString().equals("{}");
 
+  }
+
+  @Test
+  public void testAvroWithStringFallback() throws IOException
+  {
+    // avro
+    MockSchemaRegistryClient client = new MockSchemaRegistryClient();
+    SnowflakeAvroConverter converter = new SnowflakeAvroConverterWithStringFallback();
+    converter.setSchemaRegistry(client);
+    SchemaAndValue input = converter.toConnectData("test", client.getData());
+    SnowflakeRecordContent content = (SnowflakeRecordContent) input.value();
+    assert content.getData().length == 1;
+    assert content.getData()[0].equals(mapper.readTree("{\"int\":1234}"));
+
+    // string byte array
+    SnowflakeAvroConverter converter2 = new SnowflakeAvroConverterWithStringFallback();
+    converter2.setSchemaRegistry(client);
+    SchemaAndValue input2 = converter2.toConnectData("test", "\"some string\"".getBytes());
+    SnowflakeRecordContent content2 = (SnowflakeRecordContent) input2.value();
+
+    assert content2.getData().length == 1;
+    assert content2.getData()[0].equals(mapper.readTree("{\"rawBytes\":\"\\\"some string\\\"\"}"));
+
+    //null value
+    input = converter.toConnectData("test",null);
+    assert ((SnowflakeRecordContent) input.value()).getData()[0].toString().equals("{}");
   }
 
   @Test
