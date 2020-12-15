@@ -21,6 +21,8 @@ import org.apache.kafka.connect.data.SchemaAndValue;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
 
 public class SnowflakeAvroConverterWithStringFallback extends SnowflakeAvroConverter
 {
@@ -29,12 +31,13 @@ public class SnowflakeAvroConverterWithStringFallback extends SnowflakeAvroConve
   {
     LOGGER.debug(Logging.logMessage("failed to parse record as Avro, interpreting as utf-8 string"));
     // assumes byte array is UTF-8 encoded
-    String wrappedJson = "{\"rawBytes\": \"" + new String(bytes, StandardCharsets.UTF_8) + "\"}";
+    Map<String, String> payload = new HashMap<>();
+    payload.put("rawBytes", new String(bytes, StandardCharsets.UTF_8));
     try
     {
       return new SchemaAndValue(new SnowflakeJsonSchema(),
-        new SnowflakeRecordContent(mapper.readTree(wrappedJson.getBytes(StandardCharsets.UTF_8))));
-    } catch (IOException ex)
+        new SnowflakeRecordContent(mapper.valueToTree(payload)));
+    } catch (IllegalArgumentException ex)
     {
       LOGGER.error(Logging.logMessage("Failed to construct JSON record\n" + ex.toString()));
       return new SchemaAndValue(new SnowflakeJsonSchema(),

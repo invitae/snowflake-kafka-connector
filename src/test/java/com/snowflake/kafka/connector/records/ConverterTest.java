@@ -135,11 +135,11 @@ public class ConverterTest
     // string byte array
     SnowflakeAvroConverter converter2 = new SnowflakeAvroConverterWithStringFallback();
     converter2.setSchemaRegistry(client);
-    SchemaAndValue input2 = converter2.toConnectData("test", "some string".getBytes());
+    SchemaAndValue input2 = converter2.toConnectData("test", "\"some string\"".getBytes());
     SnowflakeRecordContent content2 = (SnowflakeRecordContent) input2.value();
 
     assert content2.getData().length == 1;
-    assert content2.getData()[0].equals(mapper.readTree("{\"rawBytes\":\"some string\"}"));
+    assert content2.getData()[0].equals(mapper.readTree("{\"rawBytes\":\"\\\"some string\\\"\"}"));
 
     //null value
     input = converter.toConnectData("test",null);
