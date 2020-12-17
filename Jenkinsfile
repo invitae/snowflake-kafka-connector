@@ -8,7 +8,10 @@ pipeline {
     stages {
         stage('Unit Tests') {
             steps {
-                sh 'mvn test'
+                withCredentials([file(credentialsId: 'snowflake-kafka-connector-test-creds', variable: 'CREDFILE')]) {
+                    sh 'mv $CREDFILE profile.json'
+                    sh 'mvn test'
+                }
             }
             post {
                 always {
