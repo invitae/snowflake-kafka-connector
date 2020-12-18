@@ -2,9 +2,13 @@ name: Kafka Connector Apache End2End Test AWS
 
 on:
   push:
-    branches: [ master ]
-  pull_request:
-    branches: '**'
+    branches-ignore:
+      - '**'
+#on:
+#  push:
+#    branches: [ master ]
+#  pull_request:
+#    branches: '**'
 
 jobs:
   build:

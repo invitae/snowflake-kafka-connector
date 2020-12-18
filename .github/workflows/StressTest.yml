@@ -1,8 +1,12 @@
 name: Kafka Connector Stress Test
 
 on:
-  schedule:
-    - cron:  '0 8 * * 6'
+  push:
+    branches-ignore:
+      - '**'
+#on:
+#  schedule:
+#    - cron:  '0 8 * * 6'
 
 jobs:
   build:

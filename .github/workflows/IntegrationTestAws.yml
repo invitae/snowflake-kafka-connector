@@ -2,9 +2,13 @@ name: Kafka Connector Integration Test AWS
 
 on:
   push:
-    branches: [ master ]
-  pull_request:
-    branches: '**'
+    branches-ignore:
+      - '**'
+#on:
+#  push:
+#    branches: [ master ]
+#  pull_request:
+#    branches: '**'
 
 jobs:
   build:
