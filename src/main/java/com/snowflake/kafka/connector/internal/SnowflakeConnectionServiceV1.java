@@ -130,7 +130,6 @@ public class SnowflakeConnectionServiceV1 extends Logging
     }
 
     logInfo("alter table {}", tableName);
-    getTelemetryClient().reportKafkaCreateTable(tableName);
   }
 
   @Override
