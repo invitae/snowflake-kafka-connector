@@ -16,26 +16,31 @@
  */
 package com.snowflake.kafka.connector.records;
 
+import com.snowflake.kafka.connector.internal.SnowflakeKafkaConnectorException;
 import com.snowflake.kafka.connector.mock.MockSchemaRegistryClient;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
+import io.confluent.connect.avro.AvroConverter;
+import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import net.snowflake.client.jdbc.internal.fasterxml.jackson.core.JsonProcessingException;
 import net.snowflake.client.jdbc.internal.fasterxml.jackson.databind.JsonNode;
-import net.snowflake.client.jdbc.internal.fasterxml.jackson.databind
-  .ObjectMapper;
-import net.snowflake.client.jdbc.internal.fasterxml.jackson.databind.node
-  .ObjectNode;
+import net.snowflake.client.jdbc.internal.fasterxml.jackson.databind.ObjectMapper;
+import net.snowflake.client.jdbc.internal.fasterxml.jackson.databind.node.ObjectNode;
+import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.SchemaAndValue;
+import org.apache.kafka.connect.data.SchemaBuilder;
+import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.json.JsonConverter;
 import org.junit.Test;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 public class ConverterTest
 {
@@ -144,10 +149,11 @@ public class ConverterTest
     //null value
     input = converter.toConnectData("test",null);
     assert ((SnowflakeRecordContent) input.value()).getData()[0].toString().equals("{}");
+
   }
 
   @Test
-  public void testBrokenRecord()
+  public void testBrokenRecord() throws IOException
   {
     byte[] data = "fasfas".getBytes(StandardCharsets.UTF_8);
     SnowflakeConverter converter = new SnowflakeJsonConverter();
@@ -160,6 +166,20 @@ public class ConverterTest
     result = converter.toConnectData("test", data);
     assert ((SnowflakeRecordContent) result.value()).isBroken();
     assert Arrays.equals(data,
+      ((SnowflakeRecordContent) result.value()).getBrokenData());
+
+    MockSchemaRegistryClient client = new MockSchemaRegistryClient();
+
+    byte[] brokenAvroData = new byte[] {(byte)0x00, (byte)0x00, (byte)0x00, (byte)0x00, (byte)0x01};
+    result = converter.toConnectData("test", brokenAvroData);
+    assert ((SnowflakeRecordContent) result.value()).isBroken();
+    assert Arrays.equals(brokenAvroData,
+      ((SnowflakeRecordContent) result.value()).getBrokenData());
+
+    ((SnowflakeAvroConverter) converter).setSchemaRegistry(client);
+    result = converter.toConnectData("test", brokenAvroData);
+    assert ((SnowflakeRecordContent) result.value()).isBroken();
+    assert Arrays.equals(brokenAvroData,
       ((SnowflakeRecordContent) result.value()).getBrokenData());
 
     converter = new SnowflakeAvroConverterWithoutSchemaRegistry();
@@ -187,8 +207,26 @@ public class ConverterTest
   }
 
   @Test
+  public void testConnectJsonConverter_MapBigDecimalExceedsMaxPrecision() throws JsonProcessingException {
+    JsonConverter jsonConverter = new JsonConverter();
+    Map<String, ?> config = Collections.singletonMap("schemas.enable", false);
+    jsonConverter.configure(config, false);
+    Map<String, Object> jsonMap = new HashMap<>();
+    jsonMap.put("test", new BigDecimal("999999999999999999999999999999999999999"));
+    SchemaAndValue schemaAndValue =
+        jsonConverter.toConnectData("test", mapper.writeValueAsBytes(jsonMap));
+    JsonNode result = RecordService.convertToJson(schemaAndValue.schema(), schemaAndValue.value());
+
+    ObjectNode expected = mapper.createObjectNode();
+    expected.put("test", new BigDecimal("999999999999999999999999999999999999999"));
+    //TODO: uncomment it once KAFKA-10457 is merged
+    //assert expected.toString().equals(result.toString());
+  }
+
+  @Test
   public void testAvroConverterConfig() {
     SnowflakeAvroConverter converter = new SnowflakeAvroConverter();
+    converter.configure(Collections.singletonMap("schema.registry.url", "http://fake-url"), false);
 
     Map<String, ?> config = Collections.singletonMap("schema.registry.url", "mock://my-scope-name");
     converter.readBreakOnSchemaRegistryError(config);
@@ -205,5 +243,45 @@ public class ConverterTest
     config = Collections.singletonMap(SnowflakeAvroConverter.BREAK_ON_SCHEMA_REGISTRY_ERROR, "True");
     converter.readBreakOnSchemaRegistryError(config);
     assert converter.getBreakOnSchemaRegistryError();
+  }
+
+  @Test(expected = SnowflakeKafkaConnectorException.class)
+  public void testAvroConverterErrorConfig() {
+    SnowflakeAvroConverter converter = new SnowflakeAvroConverter();
+    converter.configure(new HashMap<String, String>(), true);
+  }
+
+  @Test(expected = SnowflakeKafkaConnectorException.class)
+  public void testAvroConverterSchemaRegistryErrorFail() {
+    SnowflakeAvroConverter converter = new SnowflakeAvroConverter();
+    Map<String, ?> config = Collections.singletonMap(SnowflakeAvroConverter.BREAK_ON_SCHEMA_REGISTRY_ERROR, "true");
+    converter.readBreakOnSchemaRegistryError(config);
+
+    SchemaBuilder builder = SchemaBuilder.struct()
+      .field("int8", SchemaBuilder.int8().defaultValue((byte) 2).doc("int8 field").build());
+    Schema schema = builder.build();
+    Struct original = new Struct(schema).put("int8", (byte) 12);
+    SchemaRegistryClient schemaRegistry = new io.confluent.kafka.schemaregistry.client.MockSchemaRegistryClient();
+    AvroConverter avroConverter = new AvroConverter(schemaRegistry);
+    avroConverter.configure(Collections.singletonMap("schema.registry.url", "http://fake-url"), false);
+    byte[] converted = avroConverter.fromConnectData("test", original.schema(), original);
+    // This line will throw expected exception
+    SchemaAndValue result = converter.toConnectData("test", converted);
+  }
+
+  @Test
+  public void testAvroConverterSchemaRegistryErrorContinue() {
+    SnowflakeAvroConverter converter = new SnowflakeAvroConverter();
+
+    SchemaBuilder builder = SchemaBuilder.struct()
+      .field("int8", SchemaBuilder.int8().defaultValue((byte) 2).doc("int8 field").build());
+    Schema schema = builder.build();
+    Struct original = new Struct(schema).put("int8", (byte) 12);
+    SchemaRegistryClient schemaRegistry = new io.confluent.kafka.schemaregistry.client.MockSchemaRegistryClient();
+    AvroConverter avroConverter = new AvroConverter(schemaRegistry);
+    avroConverter.configure(Collections.singletonMap("schema.registry.url", "http://fake-url"), false);
+    byte[] converted = avroConverter.fromConnectData("test", original.schema(), original);
+    SchemaAndValue result = converter.toConnectData("test", converted);
+    assert ((SnowflakeRecordContent)result.value()).isBroken();
   }
 }

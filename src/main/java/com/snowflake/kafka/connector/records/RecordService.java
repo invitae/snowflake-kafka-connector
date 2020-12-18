@@ -28,7 +28,6 @@ import net.snowflake.client.jdbc.internal.fasterxml.jackson.databind.node
 import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.connect.data.*;
 import org.apache.kafka.connect.data.Date;
-import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.header.Header;
 import org.apache.kafka.connect.header.Headers;
 import org.apache.kafka.connect.sink.SinkRecord;
@@ -59,6 +58,8 @@ public class RecordService extends Logging
 
   public static final SimpleDateFormat ISO_DATE_FORMAT= new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
   public static final SimpleDateFormat TIME_FORMAT= new SimpleDateFormat("HH:mm:ss.SSSZ");
+  private static final int MAX_SNOWFLAKE_NUMBER_PRECISION = 38;
+
   static{
     ISO_DATE_FORMAT.setTimeZone(TimeZone.getTimeZone("UTC"));
   }
@@ -162,7 +163,7 @@ public class RecordService extends Logging
     return buffer.toString();
   }
 
-  private JsonNode putKey(SinkRecord record, ObjectNode meta)
+  JsonNode putKey(SinkRecord record, ObjectNode meta)
   {
     JsonNode key = MAPPER.createObjectNode();
     if (record.key() == null)
@@ -285,14 +286,31 @@ public class RecordService extends Logging
           return JsonNodeFactory.instance.textNode(charSeq.toString());
         case BYTES:
           if (schema != null && Decimal.LOGICAL_NAME.equals(schema.name())) {
-            return JsonNodeFactory.instance.numberNode((BigDecimal) value);
+            BigDecimal bigDecimalValue = (BigDecimal) value;
+            if (bigDecimalValue.precision() > MAX_SNOWFLAKE_NUMBER_PRECISION) {
+              // in order to prevent losing precision, convert this value to text
+              return JsonNodeFactory.instance.textNode(bigDecimalValue.toString());
+            }
+            return JsonNodeFactory.instance.numberNode(bigDecimalValue);
           }
 
           byte[] valueArr = null;
           if (value instanceof byte[])
             valueArr = (byte[]) value;
-          else if (value instanceof ByteBuffer)
-            valueArr = ((ByteBuffer) value).array();
+          else if (value instanceof ByteBuffer) {
+            ByteBuffer byteBufferValue = (ByteBuffer) value;
+            if (byteBufferValue.hasArray())
+              valueArr = ((ByteBuffer) value).array();
+            else {
+              // If the byte buffer is read only, make a copy of the buffer then access the byte array.
+              ByteBuffer clone = ByteBuffer.allocate(byteBufferValue.capacity());
+              byteBufferValue.rewind();
+              clone.put(byteBufferValue);
+              byteBufferValue.rewind();
+              clone.flip();
+              valueArr = clone.array();
+            }
+          }
 
           if (valueArr == null)
             throw SnowflakeErrors.ERROR_5015.getException("Invalid type for bytes type: " + value.getClass());
@@ -322,7 +340,7 @@ public class RecordService extends Logging
               }
             }
           } else {
-            objectMode = schema.keySchema().type() == Schema.Type.STRING;
+            objectMode = (schema.keySchema() != null && schema.keySchema().type() == Schema.Type.STRING);
           }
           ObjectNode obj = null;
           ArrayNode list = null;
