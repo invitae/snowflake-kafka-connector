@@ -21,7 +21,10 @@ import com.snowflake.kafka.connector.internal.SnowflakeErrors;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
-import java.util.*;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Map;
+import java.util.TimeZone;
 import net.snowflake.client.jdbc.internal.fasterxml.jackson.databind.JsonNode;
 import net.snowflake.client.jdbc.internal.fasterxml.jackson.databind.ObjectMapper;
 import net.snowflake.client.jdbc.internal.fasterxml.jackson.databind.node.ArrayNode;
@@ -29,12 +32,9 @@ import net.snowflake.client.jdbc.internal.fasterxml.jackson.databind.node.JsonNo
 import net.snowflake.client.jdbc.internal.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.connect.data.*;
-import org.apache.kafka.connect.data.Date;
 import org.apache.kafka.connect.header.Header;
 import org.apache.kafka.connect.header.Headers;
 import org.apache.kafka.connect.sink.SinkRecord;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class RecordService extends Logging {
   private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -50,16 +50,20 @@ public class RecordService extends Logging {
   private static final String KEY_SCHEMA_ID = "key_schema_id";
   static final String HEADERS = "headers";
 
-  private static final Logger LOGGER = LoggerFactory.getLogger(RecordService.class.getName());
+  // For each task, we require a separate instance of SimpleDataFormat, since they are not
+  // inherently thread safe
+  static final ThreadLocal<SimpleDateFormat> ISO_DATE_TIME_FORMAT =
+      ThreadLocal.withInitial(
+          () -> {
+            SimpleDateFormat simpleDateFormat =
+                new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+            simpleDateFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
+            return simpleDateFormat;
+          });
 
-  public static final SimpleDateFormat ISO_DATE_FORMAT =
-      new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
-  public static final SimpleDateFormat TIME_FORMAT = new SimpleDateFormat("HH:mm:ss.SSSZ");
-  private static final int MAX_SNOWFLAKE_NUMBER_PRECISION = 38;
-
-  static {
-    ISO_DATE_FORMAT.setTimeZone(TimeZone.getTimeZone("UTC"));
-  }
+  public static final ThreadLocal<SimpleDateFormat> TIME_FORMAT =
+      ThreadLocal.withInitial(() -> new SimpleDateFormat("HH:mm:ss.SSSZ"));
+  static final int MAX_SNOWFLAKE_NUMBER_PRECISION = 38;
 
   // This class is designed to work with empty metadata config map
   private SnowflakeMetadataConfig metadataConfig = new SnowflakeMetadataConfig();
@@ -116,7 +120,7 @@ public class RecordService extends Logging {
       meta.put(SCHEMA_ID, valueContent.getSchemaID());
     }
 
-    JsonNode key = putKey(record, meta);
+    putKey(record, meta);
 
     if (!record.headers().isEmpty()) {
       meta.set(HEADERS, parseHeaders(record.headers()));
@@ -125,7 +129,11 @@ public class RecordService extends Logging {
     StringBuilder buffer = new StringBuilder();
     for (JsonNode node : valueContent.getData()) {
       ObjectNode data = MAPPER.createObjectNode();
-      data.set(KEY, key);
+			if (meta.get(KEY) != null) {
+      	data.set(KEY, meta.get(KEY));
+			} else {
+      	data.set(KEY, MAPPER.createObjectNode());
+			}
       data.set(CONTENT, node);
       if (metadataConfig.allFlag) {
         data.set(META, meta);
@@ -135,10 +143,9 @@ public class RecordService extends Logging {
     return buffer.toString();
   }
 
-  JsonNode putKey(SinkRecord record, ObjectNode meta) {
-    JsonNode key = MAPPER.createObjectNode();
+  void putKey(SinkRecord record, ObjectNode meta) {
     if (record.key() == null) {
-      return key;
+      return;
     }
 
     if (record.keySchema().toString().equals(Schema.STRING_SCHEMA.toString())) {
@@ -154,11 +161,11 @@ public class RecordService extends Logging {
 
       JsonNode[] keyData = keyContent.getData();
       if (keyData.length == 1) {
-        key = keyContent.getData()[0];
+        meta.set(KEY, keyData[0]);
       } else {
         ArrayNode keyNode = MAPPER.createArrayNode();
         keyNode.addAll(Arrays.asList(keyData));
-        key = keyNode;
+        meta.set(KEY, keyNode);
       }
 
       if (keyContent.getSchemaID() != SnowflakeRecordContent.NON_AVRO_SCHEMA) {
@@ -169,23 +176,12 @@ public class RecordService extends Logging {
           "Unsupported Key format, please implement either String Key Converter or Snowflake"
               + " Converters");
     }
-
-    return key;
   }
 
   static JsonNode parseHeaders(Headers headers) {
     ObjectNode result = MAPPER.createObjectNode();
     for (Header header : headers) {
-      try {
-        result.set(header.key(), convertToJson(header.schema(), header.value()));
-      } catch (ClassCastException e) {
-        LOGGER.debug(
-            Logging.logMessage(
-                "Error in parseHeaders, skipping headers: "
-                    + e.getMessage()
-                    + " headers: "
-                    + headers.toString()));
-      }
+      result.set(header.key(), convertToJson(header.schema(), header.value()));
     }
     return result;
   }
@@ -202,8 +198,8 @@ public class RecordService extends Logging {
     if (logicalValue == null) {
       if (schema
           == null) // Any schema is valid and we don't have a default, so treat this as an optional
-                   // schema
-      return null;
+        // schema
+        return null;
       if (schema.defaultValue() != null) return convertToJson(schema, schema.defaultValue());
       if (schema.isOptional()) return JsonNodeFactory.instance.nullNode();
       throw SnowflakeErrors.ERROR_5015.getException(
@@ -214,10 +210,18 @@ public class RecordService extends Logging {
     try {
       final Schema.Type schemaType;
       if (schema == null) {
-        schemaType = ConnectSchema.schemaType(value.getClass());
-        if (schemaType == null)
-          throw SnowflakeErrors.ERROR_5015.getException(
-              "Java class " + value.getClass() + " does not have corresponding schema type.");
+        Schema.Type primitiveType = ConnectSchema.schemaType(value.getClass());
+        if (primitiveType != null) {
+          schemaType = primitiveType;
+        } else {
+          if (value instanceof java.util.Date) {
+            schema = Timestamp.SCHEMA;
+            schemaType = Schema.Type.INT64;
+          } else {
+            throw SnowflakeErrors.ERROR_5015.getException(
+                "Java class " + value.getClass() + " does not have corresponding schema type.");
+          }
+        }
       } else {
         schemaType = schema.type();
       }
@@ -229,10 +233,11 @@ public class RecordService extends Logging {
         case INT32:
           if (schema != null && Date.LOGICAL_NAME.equals(schema.name())) {
             return JsonNodeFactory.instance.textNode(
-                ISO_DATE_FORMAT.format((java.util.Date) value));
+                ISO_DATE_TIME_FORMAT.get().format((java.util.Date) value));
           }
           if (schema != null && Time.LOGICAL_NAME.equals(schema.name())) {
-            return JsonNodeFactory.instance.textNode(TIME_FORMAT.format((java.util.Date) value));
+            return JsonNodeFactory.instance.textNode(
+                TIME_FORMAT.get().format((java.util.Date) value));
           }
           return JsonNodeFactory.instance.numberNode((Integer) value);
         case INT64:

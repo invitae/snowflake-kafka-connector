@@ -5,7 +5,7 @@ import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-class FileNameUtils {
+public class FileNameUtils {
   private static final Logger LOGGER = LoggerFactory.getLogger(FileNameUtils.class.getName());
 
   /**
@@ -19,7 +19,7 @@ class FileNameUtils {
    * @param end end offset
    * @return file name
    */
-  static String fileName(String appName, String table, int partition, long start, long end) {
+  public static String fileName(String appName, String table, int partition, long start, long end) {
     return fileName(filePrefix(appName, table, partition), start, end);
   }
 

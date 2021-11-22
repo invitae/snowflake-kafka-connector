@@ -16,6 +16,8 @@
  */
 package com.snowflake.kafka.connector.internal;
 
+import static com.snowflake.kafka.connector.Utils.*;
+
 import com.snowflake.client.jdbc.SnowflakeDriver;
 import com.snowflake.kafka.connector.Utils;
 import java.io.File;
@@ -28,6 +30,9 @@ import java.sql.Statement;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import net.snowflake.client.core.HttpUtil;
+import net.snowflake.client.core.SFSessionProperty;
+import net.snowflake.client.jdbc.SnowflakeSQLException;
 import net.snowflake.client.jdbc.internal.fasterxml.jackson.databind.JsonNode;
 import net.snowflake.client.jdbc.internal.fasterxml.jackson.databind.ObjectMapper;
 
@@ -190,35 +195,6 @@ public class TestUtils {
     return executeQuery(query);
   }
 
-  /** describe a table */
-  static ResultSet descTable(String tableName) {
-    String query = "desc table " + tableName;
-
-    return executeQuery(query);
-  }
-
-  /**
-   * @param tableName
-   * @return Map of column names to list containing name, type, kind, null, default column
-   *     parameters
-   */
-  static Map<String, ArrayList<String>> descTableCols(String tableName) {
-    ResultSet result = descTable(tableName);
-    Map<String, ArrayList<String>> Columns = new HashMap<>();
-    try {
-      while (result.next()) {
-        ArrayList<String> row = new ArrayList<>();
-        for (int i = 1; i <= 5; i++) {
-          row.add(result.getString(i));
-        }
-        Columns.put(result.getString(1), row);
-      }
-    } catch (Exception e) {
-      throw new RuntimeException(e);
-    }
-    return Columns;
-  }
-
   static String getDesRsaKey() {
     return getProfile().get(DES_RSA_KEY).asText();
   }
@@ -288,6 +264,44 @@ public class TestUtils {
   /** @return snowflake connection for test */
   public static SnowflakeConnectionService getConnectionService() {
     return SnowflakeConnectionServiceFactory.builder().setProperties(getConf()).build();
+  }
+
+  /**
+   * @param configuration map of properties required to set while getting the connection
+   * @return snowflake connection for given config map
+   */
+  public static SnowflakeConnectionService getConnectionService(Map<String, String> configuration) {
+    return SnowflakeConnectionServiceFactory.builder().setProperties(configuration).build();
+  }
+
+  /**
+   * Reset proxy parameters in JDBC. JDBC's useProxy parameter is static member, needs to be reset
+   * after every test run. i.e needs to run after every new connection is set which modifies the
+   * proxy parameter.
+   */
+  public static void resetProxyParametersInJDBC() throws SnowflakeSQLException {
+    Map<SFSessionProperty, Object> resetProxy = new EnumMap(SFSessionProperty.class);
+    resetProxy.put(SFSessionProperty.USE_PROXY, false);
+    HttpUtil.configureCustomProxyProperties(resetProxy);
+  }
+
+  /**
+   * Reset proxy parameters in JVM which is enabled during starting a sink Task. Call this if your
+   * test/code executes the Utils.enableJVMProxy function
+   */
+  public static void resetProxyParametersInJVM() {
+    System.setProperty(HTTP_USE_PROXY, "");
+    System.setProperty(HTTP_PROXY_HOST, "");
+    System.setProperty(HTTP_PROXY_PORT, "");
+    System.setProperty(HTTPS_PROXY_HOST, "");
+    System.setProperty(HTTPS_PROXY_PORT, "");
+
+    // No harm in unsetting user password as well
+    System.setProperty(JDK_HTTP_AUTH_TUNNELING, "");
+    System.setProperty(HTTP_PROXY_USER, "");
+    System.setProperty(HTTP_PROXY_PASSWORD, "");
+    System.setProperty(HTTPS_PROXY_USER, "");
+    System.setProperty(HTTPS_PROXY_PASSWORD, "");
   }
 
   /**

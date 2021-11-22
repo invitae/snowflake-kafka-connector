@@ -16,6 +16,10 @@
  */
 package com.snowflake.kafka.connector;
 
+import static com.snowflake.kafka.connector.SnowflakeSinkConnectorConfig.BEHAVIOR_ON_NULL_VALUES_CONFIG;
+import static com.snowflake.kafka.connector.SnowflakeSinkConnectorConfig.BehaviorOnNullValues.VALIDATOR;
+import static com.snowflake.kafka.connector.SnowflakeSinkConnectorConfig.JMX_OPT;
+
 import com.snowflake.kafka.connector.internal.Logging;
 import com.snowflake.kafka.connector.internal.SnowflakeErrors;
 import com.snowflake.kafka.connector.internal.SnowflakeKafkaConnectorException;
@@ -26,12 +30,14 @@ import java.io.InputStreamReader;
 import java.net.Authenticator;
 import java.net.PasswordAuthentication;
 import java.net.URL;
+import java.net.URLConnection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.apache.kafka.common.config.Config;
+import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.config.ConfigValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -83,14 +89,22 @@ public class Utils {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(Utils.class.getName());
 
-  /** check the connector version from Maven repo, report if any update version is available. */
+  /**
+   * check the connector version from Maven repo, report if any update version is available.
+   *
+   * <p>A URl connection timeout is added in case Maven repo is not reachable in a proxy'd
+   * environment. Returning false from this method doesnt have any side effects to start the
+   * connector.
+   */
   static boolean checkConnectorVersion() {
-    LOGGER.info(Logging.logMessage("Snowflake Kafka Connector Version: {}", VERSION));
+    LOGGER.info(Logging.logMessage("Current Snowflake Kafka Connector Version: {}", VERSION));
     try {
       String latestVersion = null;
       int largestNumber = 0;
-      URL url = new URL(MVN_REPO);
-      InputStream input = url.openStream();
+      URLConnection urlConnection = new URL(MVN_REPO).openConnection();
+      urlConnection.setConnectTimeout(5000);
+      urlConnection.setReadTimeout(5000);
+      InputStream input = urlConnection.getInputStream();
       BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(input));
       String line;
       Pattern pattern = Pattern.compile("(\\d+\\.\\d+\\.\\d+?)");
@@ -450,6 +464,40 @@ public class Utils {
 
     // set jdbc logging directory
     Utils.setJDBCLoggingDirectory();
+
+    // validate whether kafka provider config is a valid value
+    if (config.containsKey(SnowflakeSinkConnectorConfig.PROVIDER_CONFIG)) {
+      try {
+        SnowflakeSinkConnectorConfig.KafkaProvider.of(
+            config.get(SnowflakeSinkConnectorConfig.PROVIDER_CONFIG));
+      } catch (IllegalArgumentException exception) {
+        LOGGER.error(Logging.logMessage("Kafka provider config error:{}", exception.getMessage()));
+        configIsValid = false;
+      }
+    }
+
+    if (config.containsKey(BEHAVIOR_ON_NULL_VALUES_CONFIG)) {
+      try {
+        // This throws an exception if config value is invalid.
+        VALIDATOR.ensureValid(
+            BEHAVIOR_ON_NULL_VALUES_CONFIG, config.get(BEHAVIOR_ON_NULL_VALUES_CONFIG));
+      } catch (ConfigException exception) {
+        LOGGER.error(
+            Logging.logMessage(
+                "Kafka config:{} error:{}",
+                BEHAVIOR_ON_NULL_VALUES_CONFIG,
+                exception.getMessage()));
+        configIsValid = false;
+      }
+    }
+
+    if (config.containsKey(JMX_OPT)) {
+      if (!(config.get(JMX_OPT).equalsIgnoreCase("true")
+          || config.get(JMX_OPT).equalsIgnoreCase("false"))) {
+        LOGGER.error(Logging.logMessage("Kafka config:{} should either be true or false", JMX_OPT));
+        configIsValid = false;
+      }
+    }
 
     if (!configIsValid) {
       throw SnowflakeErrors.ERROR_0001.getException();

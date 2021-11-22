@@ -16,13 +16,11 @@
  */
 package com.snowflake.kafka.connector;
 
-import com.snowflake.kafka.connector.internal.Logging;
-import com.snowflake.kafka.connector.internal.SnowflakeConnectionService;
-import com.snowflake.kafka.connector.internal.SnowflakeConnectionServiceFactory;
-import com.snowflake.kafka.connector.internal.SnowflakeErrors;
-import com.snowflake.kafka.connector.internal.SnowflakeKafkaConnectorException;
-import com.snowflake.kafka.connector.internal.SnowflakeTelemetryService;
-import java.util.*;
+import com.snowflake.kafka.connector.internal.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import org.apache.kafka.common.config.Config;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.connect.connector.Task;
@@ -31,10 +29,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * SnowflakeSinkConnector implements SinkConnector for Kafka Connect framework. expects
- * configuration: including topic names, partition numbers, snowflake connection info and
- * credentials info creates snowflake internal stages, snowflake tables provides configuration to
- * SinkTasks running on Kafka Connect Workers.
+ * SnowflakeSinkConnector implements SinkConnector for Kafka Connect framework.
+ *
+ * <p>Expected configuration: including topic names, partition numbers, snowflake connection info
+ * and credentials info
+ *
+ * <p>Creates snowflake internal stages, snowflake tables provides configuration to SinkTasks
+ * running on Kafka Connect Workers.
  */
 public class SnowflakeSinkConnector extends SinkConnector {
   private Map<String, String> config; // connector configuration, provided by
@@ -65,8 +66,9 @@ public class SnowflakeSinkConnector extends SinkConnector {
 
   /**
    * start method will only be called on a clean connector, i.e. it has either just been
-   * instantiated and initialized or stop () has been invoked. loads configuration and validates
-   * creates snowflake internal stages and snowflake tables
+   * instantiated and initialized or stop () has been invoked. loads configuration and validates.
+   *
+   * <p>Creates snowflake internal stages and snowflake tables
    *
    * @param parsedConfig has the configuration settings
    */
@@ -106,10 +108,12 @@ public class SnowflakeSinkConnector extends SinkConnector {
   }
 
   /**
-   * stop method will be called to stop a connector, cleans up snowflake internal stages, after
-   * making sure that there are no pending files to ingest cleans up pipes, after making sure there
-   * are no pending files to ingest also ensures that there are no leaked stages, no leaked staged
-   * files, and no leaked pipes
+   * Stop method will be called to stop a connector, cleans up snowflake internal stages, after
+   * making sure that there are no pending files to ingest.
+   *
+   * <p>Cleans up pipes, after making sure there are no pending files to ingest.
+   *
+   * <p>Also ensures that there are no leaked stages, no leaked staged files, and no leaked pipes
    */
   @Override
   public void stop() {
@@ -180,6 +184,7 @@ public class SnowflakeSinkConnector extends SinkConnector {
 
   @Override
   public Config validate(Map<String, String> connectorConfigs) {
+    LOGGER.debug("Validating connector Config: Start");
     // cross-fields validation here
     Config result = super.validate(connectorConfigs);
 
@@ -193,6 +198,7 @@ public class SnowflakeSinkConnector extends SinkConnector {
     try {
       Utils.validateProxySetting(connectorConfigs);
     } catch (SnowflakeKafkaConnectorException e) {
+      LOGGER.error("Error validating proxy parameters:{}", e.getMessage());
       switch (e.getCode()) {
         case "0022":
           Utils.updateConfigErrorMessage(
@@ -214,6 +220,10 @@ public class SnowflakeSinkConnector extends SinkConnector {
               ": proxy username and password must be provided together");
       }
     }
+    // If private key or private key passphrase is provided through file, skip validation
+    if (connectorConfigs.getOrDefault(Utils.SF_PRIVATE_KEY, "").contains("${file:")
+        || connectorConfigs.getOrDefault(Utils.PRIVATE_KEY_PASSPHRASE, "").contains("${file:"))
+      return result;
 
     // We don't validate name, since it is not included in the return value
     // so just put a test connector here
@@ -223,6 +233,8 @@ public class SnowflakeSinkConnector extends SinkConnector {
       testConnection =
           SnowflakeConnectionServiceFactory.builder().setProperties(connectorConfigs).build();
     } catch (SnowflakeKafkaConnectorException e) {
+      LOGGER.error(
+          "Validate: Error connecting to snowflake:{}, errorCode:{}", e.getMessage(), e.getCode());
       // Since url, user, db, schema, exist in config and is not empty,
       // the exceptions here would be invalid URL, and cannot connect, and no private key
       switch (e.getCode()) {
@@ -256,6 +268,7 @@ public class SnowflakeSinkConnector extends SinkConnector {
     try {
       testConnection.databaseExists(connectorConfigs.get(Utils.SF_DATABASE));
     } catch (SnowflakeKafkaConnectorException e) {
+      LOGGER.error("Validate Error msg:{}, errorCode:{}", e.getMessage(), e.getCode());
       if (e.getCode().equals("2001")) {
         Utils.updateConfigErrorMessage(result, Utils.SF_DATABASE, " database does not exist");
       } else {
@@ -267,6 +280,7 @@ public class SnowflakeSinkConnector extends SinkConnector {
     try {
       testConnection.schemaExists(connectorConfigs.get(Utils.SF_SCHEMA));
     } catch (SnowflakeKafkaConnectorException e) {
+      LOGGER.error("Validate Error msg:{}, errorCode:{}", e.getMessage(), e.getCode());
       if (e.getCode().equals("2001")) {
         Utils.updateConfigErrorMessage(result, Utils.SF_SCHEMA, " schema does not exist");
       } else {

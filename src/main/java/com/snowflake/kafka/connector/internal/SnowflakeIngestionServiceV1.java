@@ -10,6 +10,18 @@ import net.snowflake.ingest.connection.HistoryRangeResponse;
 import net.snowflake.ingest.connection.HistoryResponse;
 import net.snowflake.ingest.utils.StagedFileWrapper;
 
+/**
+ * Implementation of Snowpipe API calls. i.e handshake between KC and Snowpipe API's.
+ *
+ * <p>1. ingestFiles
+ *
+ * <p>2. insertReport - Continuous polling
+ *
+ * <p>3. loadHistoryScan - for last 1 hour.
+ *
+ * <p>The difference between above two APIs @see <a
+ * href="https://docs.snowflake.com/en/user-guide/data-load-snowpipe-rest-apis.html">here</a>
+ */
 public class SnowflakeIngestionServiceV1 extends Logging implements SnowflakeIngestionService {
   private static final long ONE_HOUR = 60 * 60 * 1000;
 
@@ -27,12 +39,20 @@ public class SnowflakeIngestionServiceV1 extends Logging implements SnowflakeIng
       String connectionScheme,
       String stageName,
       String pipeName,
-      PrivateKey privateKey) {
+      PrivateKey privateKey,
+      String userAgentSuffix) {
     this.stageName = stageName;
     try {
       this.ingestManager =
           new SimpleIngestManager(
-              accountName, userName, pipeName, privateKey, connectionScheme, host, port);
+              accountName,
+              userName,
+              pipeName,
+              privateKey,
+              connectionScheme,
+              host,
+              port,
+              userAgentSuffix);
     } catch (Exception e) {
       throw SnowflakeErrors.ERROR_0002.getException(e);
     }
@@ -48,7 +68,9 @@ public class SnowflakeIngestionServiceV1 extends Logging implements SnowflakeIng
   public void ingestFile(final String fileName) {
     try {
       InternalUtils.backoffAndRetry(
-          telemetry, () -> ingestManager.ingestFile(new StagedFileWrapper(fileName), null));
+          telemetry,
+          SnowflakeInternalOperations.INSERT_FILES_SNOWPIPE_API,
+          () -> ingestManager.ingestFile(new StagedFileWrapper(fileName), null));
     } catch (Exception e) {
       throw SnowflakeErrors.ERROR_3001.getException(e);
     }
@@ -64,6 +86,7 @@ public class SnowflakeIngestionServiceV1 extends Logging implements SnowflakeIng
     try {
       InternalUtils.backoffAndRetry(
           telemetry,
+          SnowflakeInternalOperations.INSERT_FILES_SNOWPIPE_API,
           () -> {
             while (fileNames.size() > 0) {
               // Can not send more than 5000 files in one request,
@@ -99,7 +122,9 @@ public class SnowflakeIngestionServiceV1 extends Logging implements SnowflakeIng
       response =
           (HistoryResponse)
               InternalUtils.backoffAndRetry(
-                  telemetry, () -> ingestManager.getHistory(null, null, beginMark));
+                  telemetry,
+                  SnowflakeInternalOperations.INSERT_REPORT_SNOWPIPE_API,
+                  () -> ingestManager.getHistory(null, null, beginMark));
     } catch (Exception e) {
       throw SnowflakeErrors.ERROR_3002.getException(e);
     }
@@ -174,6 +199,7 @@ public class SnowflakeIngestionServiceV1 extends Logging implements SnowflakeIng
             (HistoryRangeResponse)
                 InternalUtils.backoffAndRetry(
                     telemetry,
+                    SnowflakeInternalOperations.LOAD_HISTORY_SCAN_SNOWPIPE_API,
                     () ->
                         ingestManager.getHistoryRange(
                             null, (String) startTimeInclusiveFinal, endTimeExclusive));
@@ -222,5 +248,10 @@ public class SnowflakeIngestionServiceV1 extends Logging implements SnowflakeIng
     }
 
     return result;
+  }
+
+  /* Only used for testing */
+  public SimpleIngestManager getIngestManager() {
+    return this.ingestManager;
   }
 }

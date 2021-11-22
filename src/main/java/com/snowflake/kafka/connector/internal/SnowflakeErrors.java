@@ -97,6 +97,10 @@ public enum SnowflakeErrors {
       "0023",
       "Invalid proxy username or password",
       "Both username and password need to be provided if one of them is provided"),
+  ERROR_0024(
+      "0024",
+      "Reader schema invalid",
+      "A reader schema is provided but can not be parsed as an Avro schema"),
   // Snowflake connection issues 1---
   ERROR_1001(
       "1001",
@@ -228,11 +232,10 @@ public enum SnowflakeErrors {
       "Invalid SinkRecord received",
       "SinkRecord.value and SinkRecord.valueSchema cannot be null"),
   ERROR_5017(
-      "5017",
-      "Invalid api call to cached put",
-      "Cached put only support AWS and Azure. However GCP was found as storage"),
+      "5017", "Invalid api call to cached put", "Cached put only support AWS, Azure and GCS."),
   ERROR_5018("5018", "Failed to execute cached put", "Error in cached put command"),
-  ERROR_5019("5019", "Failed to get stage storage type", "Error in get storage type");
+  ERROR_5019("5019", "Failed to get stage storage type", "Error in get storage type"),
+  ERROR_5020("5020", "Failed to register MBean in MbeanServer", "Object Name is invalid");
 
   // properties
 

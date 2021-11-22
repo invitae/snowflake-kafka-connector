@@ -1,16 +1,20 @@
 package com.snowflake.kafka.connector.internal;
 
+import static com.snowflake.kafka.connector.internal.SnowflakeConnectionServiceV1.USER_AGENT_SUFFIX_FORMAT;
+
+import com.snowflake.kafka.connector.SnowflakeSinkConnectorConfig;
 import com.snowflake.kafka.connector.Utils;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
+import net.snowflake.ingest.internal.apache.http.Header;
+import net.snowflake.ingest.internal.apache.http.HttpHeaders;
+import net.snowflake.ingest.internal.apache.http.client.methods.HttpPost;
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Test;
 
-public class ConnectionServiceIT extends Logging {
+public class ConnectionServiceIT {
   private final SnowflakeConnectionService conn = TestUtils.getConnectionService();
 
   private final String tableName = TestUtils.randomTableName();
@@ -19,10 +23,7 @@ public class ConnectionServiceIT extends Logging {
   private final String tableName1 = TestUtils.randomTableName();
   private final String stageName1 = TestUtils.randomStageName();
 
-  // Tests with an encrypted private key. Re-enable when we configure
-  // a dedicated test user in snowflake with both unecrypted and encrypted
-  // private keys
-  @org.junit.Ignore
+  @Test
   public void testEncryptedKey() {
     // no exception
     SnowflakeConnectionServiceFactory.builder()
@@ -51,6 +52,35 @@ public class ConnectionServiceIT extends Logging {
         .getProperties()
         .getProperty(InternalUtils.JDBC_SSL)
         .equals("off");
+  }
+
+  @Test
+  public void testUserAgentSuffixInIngestionService() {
+    Map<String, String> testConfig = TestUtils.getConf();
+    String kafkaProvider = SnowflakeSinkConnectorConfig.KafkaProvider.SELF_HOSTED.name();
+    String userAgentExpectedSuffixInHttpHeader =
+        String.format(USER_AGENT_SUFFIX_FORMAT, Utils.VERSION, kafkaProvider);
+    testConfig.put(SnowflakeSinkConnectorConfig.PROVIDER_CONFIG, kafkaProvider);
+    SnowflakeConnectionService conn =
+        SnowflakeConnectionServiceFactory.builder().setProperties(testConfig).build();
+    SnowflakeIngestionServiceV1 ingestionService =
+        (SnowflakeIngestionServiceV1) conn.buildIngestService(stageName, pipeName);
+    try {
+      HttpPost httpPostInsertRequest =
+          ingestionService
+              .getIngestManager()
+              .getRequestBuilder()
+              .generateInsertRequest(UUID.randomUUID(), pipeName, Collections.EMPTY_LIST, false);
+      for (Header h : httpPostInsertRequest.getAllHeaders()) {
+        if (h.getName().equalsIgnoreCase(HttpHeaders.USER_AGENT)) {
+          System.out.println(h);
+          Assert.assertTrue(h.getValue().contains(userAgentExpectedSuffixInHttpHeader));
+          Assert.assertTrue(h.getValue().endsWith(userAgentExpectedSuffixInHttpHeader));
+        }
+      }
+    } catch (Exception e) {
+      Assert.fail("Should not throw an exception:" + e.getMessage());
+    }
   }
 
   @Test
@@ -325,23 +355,6 @@ public class ConnectionServiceIT extends Logging {
             + "(record_content variant, record_metadata variant, record_key variant, insert_time"
             + " timestamp, other int not null)");
     assert !conn.isTableCompatible(tableName);
-  }
-
-  @Test
-  public void testAlterTable() {
-    // table missing 'insert_at' column should have it added
-    TestUtils.executeQuery(
-        "create or replace table "
-            + tableName
-            + "(record_content variant, record_key variant, record_metadata string, other int)");
-    conn.alterTable(tableName);
-    Map<String, ArrayList<String>> res = TestUtils.descTableCols(tableName);
-    assert res.containsKey("INSERT_TIME");
-
-    // should be idempotent
-    conn.alterTable(tableName);
-    res = TestUtils.descTableCols(tableName);
-    assert res.containsKey("INSERT_TIME");
   }
 
   @Test

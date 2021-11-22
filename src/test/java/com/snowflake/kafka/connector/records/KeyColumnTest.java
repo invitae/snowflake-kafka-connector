@@ -30,7 +30,7 @@ public class KeyColumnTest {
     String output = service.processRecord(record);
     JsonNode result = mapper.readTree(output);
 
-    assert !result.get(META).has(KEY);
+    assert result.get(META).get(KEY).toString().equals(keyJson);
     assert result.get(KEY).toString().equals(keyJson);
   }
 }

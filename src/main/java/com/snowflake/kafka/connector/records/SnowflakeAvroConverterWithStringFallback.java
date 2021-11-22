@@ -24,7 +24,7 @@ import org.apache.kafka.connect.data.SchemaAndValue;
 
 public class SnowflakeAvroConverterWithStringFallback extends SnowflakeAvroConverter {
   @Override
-  SchemaAndValue handleError(final Exception e, final byte[] bytes) {
+  protected SchemaAndValue logErrorAndReturnBrokenRecord(final Exception e, final byte[] bytes) {
     LOGGER.debug(
         Logging.logMessage("failed to parse record as Avro, interpreting as utf-8 string"));
     // assumes byte array is UTF-8 encoded

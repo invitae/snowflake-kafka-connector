@@ -1,5 +1,6 @@
 package com.snowflake.kafka.connector.internal;
 
+import com.snowflake.kafka.connector.Utils;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -11,41 +12,86 @@ import java.sql.SQLException;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.TimeUnit;
 import net.snowflake.client.jdbc.SnowflakeConnectionV1;
 import net.snowflake.client.jdbc.SnowflakeDriver;
 import net.snowflake.client.jdbc.cloud.storage.StageInfo;
 
+/**
+ * Implementation of Snowflake Connection Service interface which includes all handshake between KC
+ * and SF through JDBC connection.
+ */
 public class SnowflakeConnectionServiceV1 extends Logging implements SnowflakeConnectionService {
   private final Connection conn;
   private final SnowflakeTelemetryService telemetry;
   private final String connectorName;
   private final String taskID;
   private final Properties prop;
+
+  // Placeholder for all proxy related properties set in the connector configuration
+  private final Properties proxyProperties;
   private final SnowflakeURL url;
   private final SnowflakeInternalStage internalStage;
+
+  // This info is provided in the connector configuration
+  // This property will be appeneded to user agent while calling snowpipe API in http request
+  private final String kafkaProvider;
+
   private StageInfo.StageType stageType;
 
+  private static final long CREDENTIAL_EXPIRY_TIMEOUT_MILLIS = TimeUnit.MINUTES.toMillis(30);
+
+  // User agent suffix we want to pass in to ingest service
+  public static final String USER_AGENT_SUFFIX_FORMAT = "SFKafkaConnector/%s provider/%s";
+
   SnowflakeConnectionServiceV1(
-      Properties prop, SnowflakeURL url, String connectorName, String taskID) {
+      Properties prop,
+      SnowflakeURL url,
+      String connectorName,
+      String taskID,
+      Properties proxyProperties,
+      String kafkaProvider) {
     this.connectorName = connectorName;
     this.taskID = taskID;
     this.url = url;
     this.prop = prop;
     this.stageType = null;
+    this.proxyProperties = proxyProperties;
+    this.kafkaProvider = kafkaProvider;
     try {
-      this.conn = new SnowflakeDriver().connect(url.getJdbcUrl(), prop);
+      if (proxyProperties != null && !proxyProperties.isEmpty()) {
+        Properties combinedProperties =
+            mergeProxyAndConnectionProperties(this.prop, this.proxyProperties);
+        logDebug("Proxy properties are set, passing in JDBC while creating the connection");
+        this.conn = new SnowflakeDriver().connect(url.getJdbcUrl(), combinedProperties);
+      } else {
+        logInfo("Establishing a JDBC connection with url:{}", url.getJdbcUrl());
+        this.conn = new SnowflakeDriver().connect(url.getJdbcUrl(), prop);
+      }
     } catch (SQLException e) {
       throw SnowflakeErrors.ERROR_1001.getException(e);
     }
-    long credentialExpireTime = 30 * 60 * 1000L;
+    long credentialExpireTimeMillis = CREDENTIAL_EXPIRY_TIMEOUT_MILLIS;
     this.internalStage =
-        new SnowflakeInternalStage((SnowflakeConnectionV1) this.conn, credentialExpireTime);
+        new SnowflakeInternalStage(
+            (SnowflakeConnectionV1) this.conn, credentialExpireTimeMillis, proxyProperties);
     this.telemetry =
         SnowflakeTelemetryServiceFactory.builder(conn)
             .setAppName(this.connectorName)
             .setTaskID(this.taskID)
             .build();
     logInfo("initialized the snowflake connection");
+  }
+
+  /* Merges the two properties. */
+  private static Properties mergeProxyAndConnectionProperties(
+      Properties connectionProperties, Properties proxyProperties) {
+    assert connectionProperties != null;
+    assert proxyProperties != null;
+    Properties mergedProperties = new Properties();
+    mergedProperties.putAll(connectionProperties);
+    mergedProperties.putAll(proxyProperties);
+    return mergedProperties;
   }
 
   @Override
@@ -566,6 +612,8 @@ public class SnowflakeConnectionServiceV1 extends Logging implements SnowflakeCo
   }
 
   @Override
+  @Deprecated
+  // Only using it in test for performance testing
   public void put(final String stageName, final String fileName, final String content) {
     InternalUtils.assertNotEmpty("stageName", stageName);
     SnowflakeConnectionV1 sfconn = (SnowflakeConnectionV1) conn;
@@ -573,6 +621,7 @@ public class SnowflakeConnectionServiceV1 extends Logging implements SnowflakeCo
     try {
       InternalUtils.backoffAndRetry(
           telemetry,
+          SnowflakeInternalOperations.UPLOAD_FILE_TO_INTERNAL_STAGE,
           () -> {
             sfconn.uploadStream(
                 stageName,
@@ -594,20 +643,22 @@ public class SnowflakeConnectionServiceV1 extends Logging implements SnowflakeCo
     if (stageType == null) {
       stageType = internalStage.getStageType(stageName);
     }
-    // Normal upload for GCS, cached upload for Azure and S3.
-    if (stageType == StageInfo.StageType.GCS) {
-      put(stageName, fileName, content);
-    } else if (stageType == StageInfo.StageType.AZURE || stageType == StageInfo.StageType.S3) {
-      try {
-        InternalUtils.backoffAndRetry(
-            telemetry,
-            () -> {
-              internalStage.putWithCache(stageName, fileName, content);
-              return true;
-            });
-      } catch (Exception e) {
-        throw SnowflakeErrors.ERROR_2011.getException(e);
-      }
+    try {
+      InternalUtils.backoffAndRetry(
+          telemetry,
+          SnowflakeInternalOperations.UPLOAD_FILE_TO_INTERNAL_STAGE_NO_CONNECTION,
+          () -> {
+            internalStage.putWithCache(stageName, fileName, content, stageType);
+            return true;
+          });
+    } catch (Exception e) {
+      logError(
+          "Put With Cache(uploadWithoutConnection) failed after multiple retries for stageName:{},"
+              + " stageType:{}, fullFilePath:{}",
+          stageName,
+          stageType,
+          fileName);
+      throw SnowflakeErrors.ERROR_2011.getException(e);
     }
   }
 
@@ -620,6 +671,7 @@ public class SnowflakeConnectionServiceV1 extends Logging implements SnowflakeCo
     try {
       InternalUtils.backoffAndRetry(
           telemetry,
+          SnowflakeInternalOperations.UPLOAD_FILE_TO_TABLE_STAGE,
           () -> {
             sfconn.uploadStream(
                 "%" + tableName,
@@ -670,6 +722,8 @@ public class SnowflakeConnectionServiceV1 extends Logging implements SnowflakeCo
       final String stageName, final String pipeName) {
     String account = url.getAccount();
     String user = prop.getProperty(InternalUtils.JDBC_USER);
+    String userAgentSuffixInHttpRequest =
+        String.format(USER_AGENT_SUFFIX_FORMAT, Utils.VERSION, kafkaProvider);
     String host = url.getUrlWithoutPort();
     int port = url.getPort();
     String connectionScheme = url.getScheme();
@@ -681,7 +735,15 @@ public class SnowflakeConnectionServiceV1 extends Logging implements SnowflakeCo
             + pipeName;
     PrivateKey privateKey = (PrivateKey) prop.get(InternalUtils.JDBC_PRIVATE_KEY);
     return SnowflakeIngestionServiceFactory.builder(
-            account, user, host, port, connectionScheme, stageName, fullPipeName, privateKey)
+            account,
+            user,
+            host,
+            port,
+            connectionScheme,
+            stageName,
+            fullPipeName,
+            privateKey,
+            userAgentSuffixInHttpRequest)
         .setTelemetry(this.telemetry)
         .build();
   }
@@ -727,6 +789,7 @@ public class SnowflakeConnectionServiceV1 extends Logging implements SnowflakeCo
     try {
       InternalUtils.backoffAndRetry(
           telemetry,
+          SnowflakeInternalOperations.REMOVE_FILE_FROM_INTERNAL_STAGE,
           () -> {
             PreparedStatement stmt = conn.prepareStatement(query);
             stmt.execute();
@@ -742,5 +805,9 @@ public class SnowflakeConnectionServiceV1 extends Logging implements SnowflakeCo
   @Override
   public Connection getConnection() {
     return this.conn;
+  }
+
+  public SnowflakeInternalStage getInternalStage() {
+    return this.internalStage;
   }
 }

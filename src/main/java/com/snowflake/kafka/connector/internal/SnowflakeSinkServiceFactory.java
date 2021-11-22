@@ -1,5 +1,6 @@
 package com.snowflake.kafka.connector.internal;
 
+import com.snowflake.kafka.connector.SnowflakeSinkConnectorConfig;
 import com.snowflake.kafka.connector.records.SnowflakeMetadataConfig;
 import java.util.Map;
 
@@ -72,6 +73,19 @@ public class SnowflakeSinkServiceFactory {
     public SnowflakeSinkServiceBuilder setAppendTableHash(boolean appendTableHash) {
       this.service.setAppendTableHash(appendTableHash);
       logInfo("set append table hash flag to {}", appendTableHash);
+      return this;
+    }
+
+    public SnowflakeSinkServiceBuilder setBehaviorOnNullValuesConfig(
+        SnowflakeSinkConnectorConfig.BehaviorOnNullValues behavior) {
+      this.service.setBehaviorOnNullValuesConfig(behavior);
+      logInfo("Config Behavior on null value is {}", behavior.toString());
+      return this;
+    }
+
+    public SnowflakeSinkServiceBuilder setCustomJMXMetrics(final boolean enableJMX) {
+      this.service.setCustomJMXMetrics(enableJMX);
+      logInfo("Config JMX value {}. (true = Enabled, false = Disabled)", enableJMX);
       return this;
     }
 

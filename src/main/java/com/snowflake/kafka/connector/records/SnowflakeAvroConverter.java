@@ -26,23 +26,33 @@ import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.util.Map;
 import net.snowflake.client.jdbc.internal.fasterxml.jackson.databind.JsonNode;
+import org.apache.avro.Conversions;
 import org.apache.avro.Schema;
+import org.apache.avro.SchemaParseException;
+import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericDatumReader;
 import org.apache.avro.generic.GenericRecord;
+import org.apache.avro.io.DatumReader;
 import org.apache.avro.io.Decoder;
 import org.apache.avro.io.DecoderFactory;
 import org.apache.kafka.connect.data.SchemaAndValue;
 
 public class SnowflakeAvroConverter extends SnowflakeConverter {
-  SchemaRegistryClient schemaRegistry = null;
+  private SchemaRegistryClient schemaRegistry = null;
 
   public static final String BREAK_ON_SCHEMA_REGISTRY_ERROR = "break.on.schema.registry.error";
+  public static final String READER_SCHEMA = "reader.schema";
+
   // By default, we don't break when schema registry is not found
-  boolean breakOnSchemaRegistryError = false;
+  private boolean breakOnSchemaRegistryError = false;
+  /* By default, no reader schema is set. In this case, the writer schema of each item is also used
+  as the reader schema. See https://avro.apache.org/docs/1.9.2/spec.html#Schema+Resolution */
+  private Schema readerSchema = null;
 
   @Override
   public void configure(final Map<String, ?> configs, final boolean isKey) {
     readBreakOnSchemaRegistryError(configs);
+    parseReaderSchema(configs);
     try { // todo: graceful way to check schema registry
       AvroConverterConfig avroConverterConfig = new AvroConverterConfig(configs);
       schemaRegistry =
@@ -63,6 +73,34 @@ public class SnowflakeAvroConverter extends SnowflakeConverter {
       }
     } catch (Exception e) {
       // do nothing
+    }
+  }
+
+  /**
+   * Parse reader schema from config if provided
+   *
+   * @param configs configuration for converter
+   */
+  void parseReaderSchema(final Map<String, ?> configs) {
+    Object readerSchemaFromConfig = configs.get(READER_SCHEMA);
+
+    if (readerSchemaFromConfig == null) {
+      return;
+    }
+
+    if (readerSchemaFromConfig instanceof String) {
+      try {
+        readerSchema = new Schema.Parser().parse((String) readerSchemaFromConfig);
+      } catch (SchemaParseException e) {
+        LOGGER.error(
+            Logging.logMessage(
+                "the string provided for reader.schema is no valid Avro schema: "
+                    + e.getMessage()));
+        throw SnowflakeErrors.ERROR_0024.getException(e);
+      }
+    } else {
+      LOGGER.error(Logging.logMessage("reader.schema has to be a string"));
+      throw SnowflakeErrors.ERROR_0024.getException();
     }
   }
 
@@ -102,19 +140,19 @@ public class SnowflakeAvroConverter extends SnowflakeConverter {
       }
       id = buffer.getInt();
     } catch (Exception e) {
-      return handleError(e, bytes);
+      return logErrorAndReturnBrokenRecord(e, bytes);
     }
 
-    // If there is any error while getting schema from schema registry,
+    // If there is any error while getting writer schema from schema registry,
     // throw error and break the connector
-    Schema schema;
+    Schema writerSchema;
     try {
-      schema = schemaRegistry.getById(id);
+      writerSchema = schemaRegistry.getById(id);
     } catch (Exception e) {
       if (breakOnSchemaRegistryError) {
         throw SnowflakeErrors.ERROR_0011.getException(e);
       } else {
-        return handleError(e, bytes);
+        return logErrorAndReturnBrokenRecord(e, bytes);
       }
     }
 
@@ -125,35 +163,46 @@ public class SnowflakeAvroConverter extends SnowflakeConverter {
 
       return new SchemaAndValue(
           new SnowflakeJsonSchema(),
-          new SnowflakeRecordContent(parseAvroWithSchema(data, schema), id));
+          new SnowflakeRecordContent(
+              parseAvroWithSchema(
+                  data, writerSchema, readerSchema == null ? writerSchema : readerSchema),
+              id));
     } catch (Exception e) {
-      return handleError(e, bytes);
+      return logErrorAndReturnBrokenRecord(e, bytes);
     }
   }
 
-  SchemaAndValue handleError(final Exception e, final byte[] bytes) {
-    return logErrorAndReturnBrokenRecord(e, bytes);
-  }
-
-  private SchemaAndValue logErrorAndReturnBrokenRecord(final Exception e, final byte[] bytes) {
+  protected SchemaAndValue logErrorAndReturnBrokenRecord(final Exception e, final byte[] bytes) {
 
     LOGGER.error(Logging.logMessage("failed to parse AVRO record\n" + e.getMessage()));
     return new SchemaAndValue(new SnowflakeJsonSchema(), new SnowflakeRecordContent(bytes));
   }
 
   /**
-   * Parse Avro record with schema
+   * Parse Avro record with a writer schema and a reader schema. The writer and the reader schema
+   * have to be compatible as described in
+   * https://avro.apache.org/docs/1.9.2/spec.html#Schema+Resolution
    *
-   * @param bytes avro data
-   * @param schema avro schema
+   * @param data avro data
+   * @param writerSchema avro schema with which data got serialized
+   * @param readerSchema avro schema that describes the shape of the returned JsonNode
    * @return JsonNode array
    */
-  JsonNode parseAvroWithSchema(final byte[] bytes, Schema schema) {
-    GenericDatumReader<GenericRecord> reader = new GenericDatumReader<>(schema);
-    InputStream input = new ByteArrayInputStream(bytes);
-    Decoder decoder = DecoderFactory.get().binaryDecoder(input, null);
+  private JsonNode parseAvroWithSchema(
+      final byte[] data, Schema writerSchema, Schema readerSchema) {
+    final GenericData genericData = new GenericData();
+    // Conversion for logical type Decimal. There are conversions for other logical types as well.
+    genericData.addLogicalTypeConversion(new Conversions.DecimalConversion());
+
+    InputStream is = new ByteArrayInputStream(data);
+    Decoder decoder = DecoderFactory.get().binaryDecoder(is, null);
+    DatumReader<GenericRecord> reader =
+        new GenericDatumReader<>(writerSchema, readerSchema, genericData);
     try {
       GenericRecord datum = reader.read(null, decoder);
+      // For byte data without logical type, this toString method handles it this way:
+      // writeEscapedString(StandardCharsets.ISO_8859_1.decode(bytes), buffer);
+      // The generated string is escaped ISO_8859_1 decoded string.
       return mapper.readTree(datum.toString());
     } catch (IOException e) {
       throw SnowflakeErrors.ERROR_0010.getException(

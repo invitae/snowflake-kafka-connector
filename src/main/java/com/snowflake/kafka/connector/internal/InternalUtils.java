@@ -1,5 +1,6 @@
 package com.snowflake.kafka.connector.internal;
 
+import com.snowflake.kafka.connector.SnowflakeSinkConnectorConfig;
 import com.snowflake.kafka.connector.Utils;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
@@ -12,6 +13,7 @@ import java.util.Date;
 import java.util.Map;
 import java.util.Properties;
 import java.util.TimeZone;
+import net.snowflake.client.core.SFSessionProperty;
 import net.snowflake.client.jdbc.internal.apache.commons.codec.binary.Base64;
 import net.snowflake.client.jdbc.internal.org.bouncycastle.jce.provider.BouncyCastleProvider;
 import net.snowflake.ingest.connection.IngestStatus;
@@ -182,6 +184,39 @@ class InternalUtils {
   }
 
   /**
+   * Helper method to decide whether to add any properties related to proxy server. These property
+   * is passed on to snowflake JDBC while calling put API, which requires proxyProperties
+   *
+   * @param conf
+   * @return proxy parameters if needed
+   */
+  protected static Properties generateProxyParametersIfRequired(Map<String, String> conf) {
+    Properties proxyProperties = new Properties();
+    // Set proxyHost and proxyPort only if both of them are present and are non null
+    if (conf.get(SnowflakeSinkConnectorConfig.JVM_PROXY_HOST) != null
+        && conf.get(SnowflakeSinkConnectorConfig.JVM_PROXY_PORT) != null) {
+      proxyProperties.put(SFSessionProperty.USE_PROXY.getPropertyKey(), "true");
+      proxyProperties.put(
+          SFSessionProperty.PROXY_HOST.getPropertyKey(),
+          conf.get(SnowflakeSinkConnectorConfig.JVM_PROXY_HOST));
+      proxyProperties.put(
+          SFSessionProperty.PROXY_PORT.getPropertyKey(),
+          conf.get(SnowflakeSinkConnectorConfig.JVM_PROXY_PORT));
+
+      // For username and password, check if host and port are given.
+      // If they are given, check if username and password are non null
+      String username = conf.get(SnowflakeSinkConnectorConfig.JVM_PROXY_USERNAME);
+      String password = conf.get(SnowflakeSinkConnectorConfig.JVM_PROXY_PASSWORD);
+
+      if (username != null && password != null) {
+        proxyProperties.put(SFSessionProperty.PROXY_USER.getPropertyKey(), username);
+        proxyProperties.put(SFSessionProperty.PROXY_PASSWORD.getPropertyKey(), password);
+      }
+    }
+    return proxyProperties;
+  }
+
+  /**
    * convert ingest status to ingested file status
    *
    * @param status an ingest status
@@ -228,22 +263,31 @@ class InternalUtils {
    * Backoff logic
    *
    * @param telemetry telemetry service
+   * @param operation Internal Operation Type which corresponds to the lambda function runnable
    * @param runnable the lambda function itself
    * @return the object that the function returns
    * @throws Exception if the runnable function throws exception
    */
   public static Object backoffAndRetry(
-      final SnowflakeTelemetryService telemetry, final backoffFunction runnable) throws Exception {
+      final SnowflakeTelemetryService telemetry,
+      final SnowflakeInternalOperations operation,
+      final backoffFunction runnable)
+      throws Exception {
     Exception finalException = null;
     for (final int iteration : backoffSec) {
       if (iteration != 0) {
-        Thread.sleep(iteration * 1000);
+        Thread.sleep(iteration * 1000L);
+        LOGGER.debug("Retry Count:{} for operation:{}", iteration, operation);
       }
       try {
         return runnable.apply();
       } catch (Exception e) {
         finalException = e;
-        LOGGER.error(e.getMessage());
+        LOGGER.error(
+            "Retry count:{} caught an exception for operation:{} with message:{}",
+            iteration,
+            operation,
+            e.getMessage());
       }
     }
     throw SnowflakeErrors.ERROR_2010.getException(finalException, telemetry);

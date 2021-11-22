@@ -16,14 +16,12 @@
  */
 package com.snowflake.kafka.connector;
 
-import com.snowflake.kafka.connector.internal.Logging;
-import com.snowflake.kafka.connector.internal.SnowflakeConnectionService;
-import com.snowflake.kafka.connector.internal.SnowflakeConnectionServiceFactory;
-import com.snowflake.kafka.connector.internal.SnowflakeErrors;
-import com.snowflake.kafka.connector.internal.SnowflakeSinkService;
-import com.snowflake.kafka.connector.internal.SnowflakeSinkServiceFactory;
+import com.snowflake.kafka.connector.internal.*;
 import com.snowflake.kafka.connector.records.SnowflakeMetadataConfig;
-import java.util.*;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
@@ -35,9 +33,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * SnowflakeSinkTask implements SinkTask for Kafka Connect framework. expects configuration from
- * SnowflakeSinkConnector creates sink service instance takes records loaded from those Kafka
- * partitions, ingests to Snowflake via Sink service
+ * SnowflakeSinkTask implements SinkTask for Kafka Connect framework.
+ *
+ * <p>Expects configuration from SnowflakeSinkConnector
+ *
+ * <p>Creates sink service instance, takes records loaded from those Kafka partitions and ingests to
+ * Snowflake via Sink service
  */
 public class SnowflakeSinkTask extends SinkTask {
   private static final long WAIT_TIME = 5 * 1000; // 5 sec
@@ -67,6 +68,16 @@ public class SnowflakeSinkTask extends SinkTask {
       throw SnowflakeErrors.ERROR_5013.getException();
     }
     return conn;
+  }
+
+  /**
+   * Return an instance of SnowflakeConnection if it was set previously by calling Start(). Else,
+   * return an empty
+   *
+   * @return Optional of SnowflakeConnectionService
+   */
+  public Optional<SnowflakeConnectionService> getSnowflakeConnection() {
+    return Optional.ofNullable(getConnection());
   }
 
   private SnowflakeSinkService getSink() {
@@ -115,6 +126,25 @@ public class SnowflakeSinkTask extends SinkTask {
     final long bufferFlushTime =
         Long.parseLong(parsedConfig.get(SnowflakeSinkConnectorConfig.BUFFER_FLUSH_TIME_SEC));
 
+    // Falling back to default behavior which is to ingest an empty json string if we get null
+    // value. (Tombstone record)
+    SnowflakeSinkConnectorConfig.BehaviorOnNullValues behavior =
+        SnowflakeSinkConnectorConfig.BehaviorOnNullValues.DEFAULT;
+    if (parsedConfig.containsKey(SnowflakeSinkConnectorConfig.BEHAVIOR_ON_NULL_VALUES_CONFIG)) {
+      // we can always assume here that value passed in would be an allowed value, otherwise the
+      // connector would never start or reach the sink task stage
+      behavior =
+          SnowflakeSinkConnectorConfig.BehaviorOnNullValues.valueOf(
+              parsedConfig.get(SnowflakeSinkConnectorConfig.BEHAVIOR_ON_NULL_VALUES_CONFIG));
+    }
+
+    // we would have already validated the config inside SFConnector start()
+    boolean enableCustomJMXMonitoring = SnowflakeSinkConnectorConfig.JMX_OPT_DEFAULT;
+    if (parsedConfig.containsKey(SnowflakeSinkConnectorConfig.JMX_OPT)) {
+      enableCustomJMXMonitoring =
+          Boolean.parseBoolean(parsedConfig.get(SnowflakeSinkConnectorConfig.JMX_OPT));
+    }
+
     conn =
         SnowflakeConnectionServiceFactory.builder()
             .setProperties(parsedConfig)
@@ -131,6 +161,8 @@ public class SnowflakeSinkTask extends SinkTask {
             .setFlushTime(bufferFlushTime)
             .setTopic2TableMap(topic2table)
             .setMetadataConfig(metadataConfig)
+            .setBehaviorOnNullValuesConfig(behavior)
+            .setCustomJMXMetrics(enableCustomJMXMonitoring)
             .setAppendTableHash(appendTableHash)
             .build();
 
@@ -181,8 +213,10 @@ public class SnowflakeSinkTask extends SinkTask {
   }
 
   /**
-   * close sink service close all running task because the parameter of open function contains all
-   * partition info but not only the new partition
+   * Closes sink service
+   *
+   * <p>Closes all running task because the parameter of open function contains all partition info
+   * but not only the new partition
    *
    * @param partitions - The list of all partitions that were assigned to the task
    */

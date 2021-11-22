@@ -1,6 +1,5 @@
 package com.snowflake.kafka.connector.internal;
 
-
 public interface SnowflakeTelemetryService {
 
   /**

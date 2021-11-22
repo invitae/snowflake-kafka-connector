@@ -61,14 +61,14 @@ public class ProcessRecordTest {
             getString(),
             getAvro(),
             mapper.readTree(
-                "{\"key\":{},\"content\":{\"int\":222},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"schema_id\":1,\"key\":\"string"
+                "{\"key\":\"string value\",\"content\":{\"int\":222},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"schema_id\":1,\"key\":\"string"
                     + " value\"}}")),
         new Case(
             "string key, avro without registry value",
             getString(),
             getAvroWithoutRegistryValue(),
             mapper.readTree(
-                "{\"key\":{},\"content\":{\"name\":\"foo\",\"age\":30},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"key\":\"string"
+                "{\"key\":\"string value\",\"content\":{\"name\":\"foo\",\"age\":30},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"key\":\"string"
                     + " value\"}}{\"content\":{\"name\":\"bar\",\"age\":29},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"key\":\"string"
                     + " value\"}}")),
         new Case(
@@ -76,62 +76,62 @@ public class ProcessRecordTest {
             getString(),
             getJson(),
             mapper.readTree(
-                "{\"key\":{},\"content\":{\"some_field\":\"some_value\"},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"key\":\"string"
+                "{\"key\":\"string value\",\"content\":{\"some_field\":\"some_value\"},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"key\":\"string"
                     + " value\"}}")),
         new Case(
             "avro key, avro value",
             getAvro(),
             getAvro(),
             mapper.readTree(
-                "{\"key\":{\"int\":222},\"content\":{\"int\":222},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"schema_id\":1,\"key_schema_id\":1}}")),
+                "{\"key\":{\"int\":222},\"content\":{\"int\":222},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"schema_id\":1,\"key\":{\"int\":222},\"key_schema_id\":1}}")),
         new Case(
             "avro key, avro without registry value",
             getAvro(),
             getAvroWithoutRegistryValue(),
             mapper.readTree(
-                "{\"key\":{\"int\":222},\"content\":{\"name\":\"foo\",\"age\":30},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"key_schema_id\":1}}{\"content\":{\"name\":\"bar\",\"age\":29},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"key\":[{\"int\":222}],\"key_schema_id\":1}}")),
+                "{\"key\":{\"int\":222},\"content\":{\"name\":\"foo\",\"age\":30},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"key\":{\"int\":222},\"key_schema_id\":1}}{\"content\":{\"name\":\"bar\",\"age\":29},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"key\":[{\"int\":222}],\"key_schema_id\":1}}")),
         new Case(
             "avro key, json value",
             getAvro(),
             getJson(),
             mapper.readTree(
-                "{\"key\":{\"int\":222},\"content\":{\"some_field\":\"some_value\"},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"key_schema_id\":1}}")),
+                "{\"key\":{\"int\":222},\"content\":{\"some_field\":\"some_value\"},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"key\":{\"int\":222},\"key_schema_id\":1}}")),
         new Case(
             "avro without registry key, avro value",
             getAvroWithoutRegistryKey(),
             getAvro(),
             mapper.readTree(
-                "{\"key\":{\"id\":\"aabbccdd\"},\"content\":{\"int\":222},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"schema_id\":1}}")),
+                "{\"key\":{\"id\":\"aabbccdd\"},\"content\":{\"int\":222},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"schema_id\":1,\"key\":{\"id\":\"aabbccdd\"}}}")),
         new Case(
             "avro without registry key, avro without registry value",
             getAvroWithoutRegistryKey(),
             getAvroWithoutRegistryValue(),
             mapper.readTree(
-                "{\"key\":{\"id\":\"aabbccdd\"},\"content\":{\"name\":\"foo\",\"age\":30},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0}}{\"content\":{\"name\":\"bar\",\"age\":29},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0}}")),
+                "{\"key\":{\"id\":\"aabbccdd\"},\"content\":{\"name\":\"foo\",\"age\":30},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"key\":{\"id\":\"aabbccdd\"}}}{\"content\":{\"name\":\"bar\",\"age\":29},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"key\":[{\"id\":\"aabbccdd\"}]}}")),
         new Case(
             "avro without registry key, json value",
             getAvroWithoutRegistryKey(),
             getJson(),
             mapper.readTree(
-                "{\"key\":{\"id\":\"aabbccdd\"},\"content\":{\"some_field\":\"some_value\"},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0}}")),
+                "{\"key\":{\"id\":\"aabbccdd\"},\"content\":{\"some_field\":\"some_value\"},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"key\":{\"id\":\"aabbccdd\"}}}")),
         new Case(
             "json key, avro value",
             getJson(),
             getAvro(),
             mapper.readTree(
-                "{\"key\":{\"some_field\":\"some_value\"},\"content\":{\"int\":222},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"schema_id\":1}}")),
+                "{\"key\":{\"some_field\":\"some_value\"},\"content\":{\"int\":222},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"schema_id\":1,\"key\":{\"some_field\":\"some_value\"}}}")),
         new Case(
             "json key, avro without registry value",
             getJson(),
             getAvroWithoutRegistryValue(),
             mapper.readTree(
-                "{\"key\":{\"some_field\":\"some_value\"},\"content\":{\"name\":\"foo\",\"age\":30},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0}}{\"content\":{\"name\":\"bar\",\"age\":29},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0}}")),
+                "{\"key\":{\"some_field\":\"some_value\"},\"content\":{\"name\":\"foo\",\"age\":30},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"key\":{\"some_field\":\"some_value\"}}}{\"content\":{\"name\":\"bar\",\"age\":29},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"key\":[{\"some_field\":\"some_value\"}]}}")),
         new Case(
             "json key, json value",
             getJson(),
             getJson(),
             mapper.readTree(
-                "{\"key\":{\"some_field\":\"some_value\"},\"content\":{\"some_field\":\"some_value\"},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0}}")),
+                "{\"key\":{\"some_field\":\"some_value\"},\"content\":{\"some_field\":\"some_value\"},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"key\":{\"some_field\":\"some_value\"}}}")),
         new Case(
             "multi line avro key, multi line avro value",
             getAvroMultiLine(),
@@ -140,7 +140,11 @@ public class ProcessRecordTest {
                 "{\"key\":[{\"username\":\"miguno\",\"tweet\":\"Rock: Nerf paper, scissors is"
                     + " fine.\",\"timestamp\":1366150681},{\"username\":\"BlizzardCS\",\"tweet\":\"Works"
                     + " as intended.  Terran is"
-                    + " IMBA.\",\"timestamp\":1366154481}],\"content\":{\"some_field\":\"some_value\"},\"meta\":{\"topic\":\"test\",\"offset\":0,\"partition\":0}}")),
+                    + " IMBA.\",\"timestamp\":1366154481}],"
+                		+ "\"content\":{\"some_field\":\"some_value\"},\"meta\":{\"topic\":\"test\",\"offset\":0,\"partition\":0,\"key\":[{\"username\":\"miguno\",\"tweet\":\"Rock:"
+                    + " Nerf paper, scissors is"
+                    + " fine.\",\"timestamp\":1366150681},{\"username\":\"BlizzardCS\",\"tweet\":\"Works"
+                    + " as intended.  Terran is IMBA.\",\"timestamp\":1366154481}]}}")),
         new Case(
             "null key, json value",
             getNull(),

@@ -200,4 +200,72 @@ public class ConnectorConfigTest {
     config.put(SnowflakeSinkConnectorConfig.BUFFER_COUNT_RECORDS, "adssadsa");
     Utils.validateConfig(config);
   }
+
+  @Test
+  public void testKafkaProviderConfigValue_valid_null() {
+    Map<String, String> config = getConfig();
+    config.put(SnowflakeSinkConnectorConfig.PROVIDER_CONFIG, null);
+    Utils.validateConfig(config);
+  }
+
+  @Test
+  public void testKafkaProviderConfigValue_valid_empty() {
+    Map<String, String> config = getConfig();
+    config.put(SnowflakeSinkConnectorConfig.PROVIDER_CONFIG, "");
+    Utils.validateConfig(config);
+  }
+
+  @Test
+  public void testKafkaProviderConfigValue_valid_provider() {
+    Map<String, String> config = getConfig();
+    config.put(SnowflakeSinkConnectorConfig.PROVIDER_CONFIG, "self_hosted");
+    Utils.validateConfig(config);
+
+    config.put(SnowflakeSinkConnectorConfig.PROVIDER_CONFIG, "CONFLUENT");
+    Utils.validateConfig(config);
+
+    config.put(SnowflakeSinkConnectorConfig.PROVIDER_CONFIG, "UNKNOWN");
+    Utils.validateConfig(config);
+  }
+
+  @Test(expected = SnowflakeKafkaConnectorException.class)
+  public void testKafkaProviderConfigValue_invalid_value() {
+    Map<String, String> config = getConfig();
+    config.put(SnowflakeSinkConnectorConfig.PROVIDER_CONFIG, "Something_which_is_not_supported");
+    Utils.validateConfig(config);
+  }
+
+  @Test
+  public void testBehaviorOnNullValuesConfig_valid_value() {
+    Map<String, String> config = getConfig();
+    config.put(SnowflakeSinkConnectorConfig.BEHAVIOR_ON_NULL_VALUES_CONFIG, "IGNORE");
+    Utils.validateConfig(config);
+
+    config.put(SnowflakeSinkConnectorConfig.BEHAVIOR_ON_NULL_VALUES_CONFIG, "DEFAULT");
+    Utils.validateConfig(config);
+  }
+
+  @Test(expected = SnowflakeKafkaConnectorException.class)
+  public void testBehaviorOnNullValuesConfig_invalid_value() {
+    Map<String, String> config = getConfig();
+    config.put(SnowflakeSinkConnectorConfig.BEHAVIOR_ON_NULL_VALUES_CONFIG, "INVALID");
+    Utils.validateConfig(config);
+  }
+
+  @Test
+  public void testJMX_valid_value() {
+    Map<String, String> config = getConfig();
+    config.put(SnowflakeSinkConnectorConfig.JMX_OPT, "true");
+    Utils.validateConfig(config);
+
+    config.put(SnowflakeSinkConnectorConfig.JMX_OPT, "False");
+    Utils.validateConfig(config);
+  }
+
+  @Test(expected = SnowflakeKafkaConnectorException.class)
+  public void testJMX_invalid_value() {
+    Map<String, String> config = getConfig();
+    config.put(SnowflakeSinkConnectorConfig.JMX_OPT, "INVALID");
+    Utils.validateConfig(config);
+  }
 }

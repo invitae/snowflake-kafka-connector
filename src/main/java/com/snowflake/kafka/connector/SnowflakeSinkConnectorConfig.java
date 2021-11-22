@@ -16,8 +16,13 @@
  */
 package com.snowflake.kafka.connector;
 
+import com.google.common.base.Strings;
 import com.snowflake.kafka.connector.internal.Logging;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigDef.Importance;
 import org.apache.kafka.common.config.ConfigDef.Type;
@@ -47,6 +52,9 @@ public class SnowflakeSinkConnectorConfig {
   static final String APPEND_TABLE_HASH = "snowflake.table.appendhash";
   public static final boolean APPEND_TABLE_HASH_DEFAULT = true;
 
+  // For tombstone records
+  public static final String BEHAVIOR_ON_NULL_VALUES_CONFIG = "behavior.on.null.values";
+
   // Time in seconds
   public static final long BUFFER_FLUSH_TIME_SEC_MIN = 10;
   public static final long BUFFER_FLUSH_TIME_SEC_DEFAULT = 120;
@@ -63,10 +71,10 @@ public class SnowflakeSinkConnectorConfig {
 
   // Proxy Info
   private static final String PROXY_INFO = "Proxy Info";
-  static final String JVM_PROXY_HOST = "jvm.proxy.host";
-  static final String JVM_PROXY_PORT = "jvm.proxy.port";
-  static final String JVM_PROXY_USERNAME = "jvm.proxy.username";
-  static final String JVM_PROXY_PASSWORD = "jvm.proxy.password";
+  public static final String JVM_PROXY_HOST = "jvm.proxy.host";
+  public static final String JVM_PROXY_PORT = "jvm.proxy.port";
+  public static final String JVM_PROXY_USERNAME = "jvm.proxy.username";
+  public static final String JVM_PROXY_PASSWORD = "jvm.proxy.password";
 
   // JDBC logging directory Info (environment variable)
   static final String SNOWFLAKE_JDBC_LOG_DIR = "JDBC_LOG_DIR";
@@ -83,11 +91,20 @@ public class SnowflakeSinkConnectorConfig {
   public static final String SNOWFLAKE_METADATA_ALL = "snowflake.metadata.all";
   public static final String SNOWFLAKE_METADATA_DEFAULT = "true";
 
+  // Where is Kafka hosted? self, confluent or any other in future.
+  // By default it will be None since this is not enforced and only used for monitoring
+  public static final String PROVIDER_CONFIG = "provider";
+
+  // metrics
+  public static final String JMX_OPT = "jmx";
+  public static final boolean JMX_OPT_DEFAULT = true;
+
   private static final Logger LOGGER =
       LoggerFactory.getLogger(SnowflakeSinkConnectorConfig.class.getName());
 
   private static final ConfigDef.Validator nonEmptyStringValidator = new ConfigDef.NonEmptyString();
   private static final ConfigDef.Validator topicToTableValidator = new TopicToTableValidator();
+  private static final ConfigDef.Validator KAFKA_PROVIDER_VALIDATOR = new KafkaProviderValidator();
 
   static void setDefaultValues(Map<String, String> config) {
     setFieldToDefaultValues(config, BUFFER_COUNT_RECORDS, BUFFER_COUNT_RECORDS_DEFAULT);
@@ -318,6 +335,31 @@ public class SnowflakeSinkConnectorConfig {
             ConfigDef.Width.NONE,
             SNOWFLAKE_METADATA_OFFSET_AND_PARTITION)
         .define(
+            PROVIDER_CONFIG,
+            Type.STRING,
+            KafkaProvider.UNKNOWN.name(),
+            KAFKA_PROVIDER_VALIDATOR,
+            Importance.LOW,
+            "Whether kafka is running on Confluent code, self hosted or other managed service")
+        .define(
+            BEHAVIOR_ON_NULL_VALUES_CONFIG,
+            Type.STRING,
+            BehaviorOnNullValues.DEFAULT.toString(),
+            BehaviorOnNullValues.VALIDATOR,
+            Importance.LOW,
+            "How to handle records with a null value (i.e. Kafka tombstone records)."
+                + " Valid options are 'DEFAULT' and 'IGNORE'.",
+            CONNECTOR_CONFIG,
+            4,
+            ConfigDef.Width.NONE,
+            BEHAVIOR_ON_NULL_VALUES_CONFIG)
+        .define(
+            JMX_OPT,
+            ConfigDef.Type.BOOLEAN,
+            JMX_OPT_DEFAULT,
+            ConfigDef.Importance.HIGH,
+            "Whether to enable JMX MBeans for custom SF metrics")
+        .define(
             APPEND_TABLE_HASH,
             Type.BOOLEAN,
             APPEND_TABLE_HASH_DEFAULT,
@@ -345,7 +387,120 @@ public class SnowflakeSinkConnectorConfig {
 
     public String toString() {
       return "Topic to table map format : comma-seperated tuples, e.g."
-                 + " <topic-1>:<table-1>,<topic-2>:<table-2>,... ";
+          + " <topic-1>:<table-1>,<topic-2>:<table-2>,... ";
+    }
+  }
+
+  /* Validator to validate Kafka Provider values which says where kafka is hosted */
+  public static class KafkaProviderValidator implements ConfigDef.Validator {
+    public KafkaProviderValidator() {}
+
+    // This API is called by framework to ensure the validity when connector is started or when a
+    // validate REST API is called
+    @Override
+    public void ensureValid(String name, Object value) {
+      assert value instanceof String;
+      final String strValue = (String) value;
+      // The value can be null or empty.
+      try {
+        KafkaProvider kafkaProvider = KafkaProvider.of(strValue);
+        LOGGER.debug("KafkaProvider value is:{}", kafkaProvider.name());
+      } catch (final IllegalArgumentException e) {
+        throw new ConfigException(PROVIDER_CONFIG, value, e.getMessage());
+      }
+    }
+
+    public String toString() {
+      return "Whether kafka is running on Confluent code, self hosted or other managed service."
+          + " Allowed values are:"
+          + String.join(",", KafkaProvider.PROVIDER_NAMES);
+    }
+  }
+
+  /* Enum which represents allowed values of kafka provider. (Hosted Platform) */
+  public enum KafkaProvider {
+    // Default value, when nothing is provided. (More like Not Applicable)
+    UNKNOWN,
+
+    // Kafka/KC is on self hosted node
+    SELF_HOSTED,
+
+    // Hosted/managed by Confluent
+    CONFLUENT,
+    ;
+
+    // All valid enum values
+    public static final List<String> PROVIDER_NAMES =
+        Arrays.stream(KafkaProvider.values())
+            .map(kafkaProvider -> kafkaProvider.name().toLowerCase())
+            .collect(Collectors.toList());
+
+    // Returns the KafkaProvider object from string. It does convert an empty or null value to an
+    // Enum.
+    public static KafkaProvider of(final String kafkaProviderStr) {
+
+      if (Strings.isNullOrEmpty(kafkaProviderStr)) {
+        return KafkaProvider.UNKNOWN;
+      }
+
+      for (final KafkaProvider b : KafkaProvider.values()) {
+        if (b.name().equalsIgnoreCase(kafkaProviderStr)) {
+          return b;
+        }
+      }
+      throw new IllegalArgumentException(
+          String.format(
+              "Unsupported provider name: %s. Supported are: %s",
+              kafkaProviderStr, String.join(",", PROVIDER_NAMES)));
+    }
+  }
+
+  /* The allowed values for tombstone records. */
+  public enum BehaviorOnNullValues {
+    // Default as the name suggests, would be a default behavior which will not filter null values.
+    // This will put an empty JSON string in corresponding snowflake table.
+    // Using this means we will fall back to old behavior before introducing this config.
+    DEFAULT,
+
+    // Ignore would filter out records which has null value, but a valid key.
+    IGNORE,
+    ;
+
+    /* Validator to validate behavior.on.null.values which says whether kafka should keep null value records or ignore them while ingesting into snowflake table. */
+    public static final ConfigDef.Validator VALIDATOR =
+        new ConfigDef.Validator() {
+          private final ConfigDef.ValidString validator = ConfigDef.ValidString.in(names());
+
+          @Override
+          public void ensureValid(String name, Object value) {
+            if (value instanceof String) {
+              value = ((String) value).toLowerCase(Locale.ROOT);
+            }
+            validator.ensureValid(name, value);
+          }
+
+          // Overridden here so that ConfigDef.toEnrichedRst shows possible values correctly
+          @Override
+          public String toString() {
+            return validator.toString();
+          }
+        };
+
+    // All valid enum values
+    public static String[] names() {
+      BehaviorOnNullValues[] behaviors = values();
+      String[] result = new String[behaviors.length];
+
+      for (int i = 0; i < behaviors.length; i++) {
+        result[i] = behaviors[i].toString();
+      }
+
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return name().toLowerCase(Locale.ROOT);
     }
   }
 }
