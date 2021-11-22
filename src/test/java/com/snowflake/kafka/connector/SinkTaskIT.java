@@ -1,10 +1,16 @@
 package com.snowflake.kafka.connector;
 
+import static com.snowflake.kafka.connector.SnowflakeSinkConnectorConfig.BUFFER_COUNT_RECORDS_DEFAULT;
+import static com.snowflake.kafka.connector.internal.TestUtils.TEST_CONNECTOR_NAME;
+
 import com.snowflake.kafka.connector.internal.SnowflakeConnectionService;
 import com.snowflake.kafka.connector.internal.SnowflakeKafkaConnectorException;
 import com.snowflake.kafka.connector.internal.TestUtils;
 import com.snowflake.kafka.connector.records.SnowflakeJsonSchema;
 import com.snowflake.kafka.connector.records.SnowflakeRecordContent;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 import net.snowflake.client.jdbc.internal.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
@@ -15,21 +21,13 @@ import org.junit.After;
 import org.junit.Ignore;
 import org.junit.Test;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
-
-import static com.snowflake.kafka.connector.SnowflakeSinkConnectorConfig.BUFFER_COUNT_RECORDS_DEFAULT;
-import static com.snowflake.kafka.connector.internal.TestUtils.TEST_CONNECTOR_NAME;
-
 public class SinkTaskIT {
   private String topicName = TestUtils.randomTableName();
   private SnowflakeConnectionService conn = TestUtils.getConnectionService();
   private static int partition = 0;
 
   @Test
-  public void testPreCommit()
-  {
+  public void testPreCommit() {
     SnowflakeSinkTask sinkTask = new SnowflakeSinkTask();
     Map<TopicPartition, OffsetAndMetadata> offsetMap = new HashMap<>();
 
@@ -38,8 +36,7 @@ public class SinkTaskIT {
   }
 
   @Test(expected = SnowflakeKafkaConnectorException.class)
-  public void testSinkTaskProxyConfigMock()
-  {
+  public void testSinkTaskProxyConfigMock() {
     Map<String, String> config = TestUtils.getConf();
     SnowflakeSinkConnectorConfig.setDefaultValues(config);
 
@@ -48,11 +45,9 @@ public class SinkTaskIT {
     config.put(SnowflakeSinkConnectorConfig.JVM_PROXY_USERNAME, "user");
     config.put(SnowflakeSinkConnectorConfig.JVM_PROXY_PASSWORD, "password");
     SnowflakeSinkTask sinkTask = new SnowflakeSinkTask();
-    try
-    {
+    try {
       sinkTask.start(config);
-    } catch (SnowflakeKafkaConnectorException e)
-    {
+    } catch (SnowflakeKafkaConnectorException e) {
       assert System.getProperty(Utils.HTTP_USE_PROXY).equals("true");
       assert System.getProperty(Utils.HTTP_PROXY_HOST).equals("wronghost");
       assert System.getProperty(Utils.HTTP_PROXY_PORT).equals("wrongport");
@@ -79,8 +74,7 @@ public class SinkTaskIT {
   }
 
   @Test
-  public void testSinkTask() throws Exception
-  {
+  public void testSinkTask() throws Exception {
     Map<String, String> config = TestUtils.getConf();
     SnowflakeSinkConnectorConfig.setDefaultValues(config);
     SnowflakeSinkTask sinkTask = new SnowflakeSinkTask();
@@ -96,10 +90,18 @@ public class SinkTaskIT {
     ObjectMapper objectMapper = new ObjectMapper();
     Schema snowflakeSchema = new SnowflakeJsonSchema();
     SnowflakeRecordContent content = new SnowflakeRecordContent(objectMapper.readTree(json));
-    for (int i = 0 ; i < BUFFER_COUNT_RECORDS_DEFAULT; ++i)
-    {
-      records.add(new SinkRecord(topicName, partition, snowflakeSchema, content,
-        snowflakeSchema, content, i, System.currentTimeMillis(), TimestampType.CREATE_TIME));
+    for (int i = 0; i < BUFFER_COUNT_RECORDS_DEFAULT; ++i) {
+      records.add(
+          new SinkRecord(
+              topicName,
+              partition,
+              snowflakeSchema,
+              content,
+              snowflakeSchema,
+              content,
+              i,
+              System.currentTimeMillis(),
+              TimestampType.CREATE_TIME));
     }
     sinkTask.put(records);
 
@@ -107,8 +109,17 @@ public class SinkTaskIT {
     String brokenJson = "{ broken json";
     records = new ArrayList<>();
     content = new SnowflakeRecordContent(brokenJson.getBytes());
-    records.add(new SinkRecord(topicName, partition, snowflakeSchema, content,
-      snowflakeSchema, content, 10000, System.currentTimeMillis(), TimestampType.CREATE_TIME));
+    records.add(
+        new SinkRecord(
+            topicName,
+            partition,
+            snowflakeSchema,
+            content,
+            snowflakeSchema,
+            content,
+            10000,
+            System.currentTimeMillis(),
+            TimestampType.CREATE_TIME));
     sinkTask.put(records);
 
     // commit offset
@@ -122,8 +133,7 @@ public class SinkTaskIT {
   }
 
   @Test
-  public void testSinkTaskNegative() throws Exception
-  {
+  public void testSinkTaskNegative() throws Exception {
     Map<String, String> config = TestUtils.getConf();
     SnowflakeSinkConnectorConfig.setDefaultValues(config);
     SnowflakeSinkTask sinkTask = new SnowflakeSinkTask();
@@ -148,10 +158,18 @@ public class SinkTaskIT {
     ObjectMapper objectMapper = new ObjectMapper();
     Schema snowflakeSchema = new SnowflakeJsonSchema();
     SnowflakeRecordContent content = new SnowflakeRecordContent(objectMapper.readTree(json));
-    for (int i = 0 ; i < BUFFER_COUNT_RECORDS_DEFAULT; ++i)
-    {
-      records.add(new SinkRecord(topicName, partition, snowflakeSchema, content,
-        snowflakeSchema, content, i, System.currentTimeMillis(), TimestampType.CREATE_TIME));
+    for (int i = 0; i < BUFFER_COUNT_RECORDS_DEFAULT; ++i) {
+      records.add(
+          new SinkRecord(
+              topicName,
+              partition,
+              snowflakeSchema,
+              content,
+              snowflakeSchema,
+              content,
+              i,
+              System.currentTimeMillis(),
+              TimestampType.CREATE_TIME));
     }
     sinkTask.put(records);
 
@@ -159,8 +177,17 @@ public class SinkTaskIT {
     String brokenJson = "{ broken json";
     records = new ArrayList<>();
     content = new SnowflakeRecordContent(brokenJson.getBytes());
-    records.add(new SinkRecord(topicName, partition, snowflakeSchema, content,
-      snowflakeSchema, content, 10000, System.currentTimeMillis(), TimestampType.CREATE_TIME));
+    records.add(
+        new SinkRecord(
+            topicName,
+            partition,
+            snowflakeSchema,
+            content,
+            snowflakeSchema,
+            content,
+            10000,
+            System.currentTimeMillis(),
+            TimestampType.CREATE_TIME));
     sinkTask.put(records);
 
     // commit offset
@@ -173,20 +200,18 @@ public class SinkTaskIT {
   }
 
   @After
-  public void after()
-  {
+  public void after() {
     TestUtils.dropTable(topicName);
     conn.dropStage(Utils.stageName(TEST_CONNECTOR_NAME, topicName));
     conn.dropPipe(Utils.pipeName(TEST_CONNECTOR_NAME, topicName, partition));
   }
 
   /**
-   * This test is skipped because it is manually tested. To run this test, spin up a http/https proxy
-   * at 127.0.0.1:3128 and set authentication as required. 
+   * This test is skipped because it is manually tested. To run this test, spin up a http/https
+   * proxy at 127.0.0.1:3128 and set authentication as required.
    */
   @Ignore
-  public void testSinkTaskProxyConfig()
-  {
+  public void testSinkTaskProxyConfig() {
     Map<String, String> config = TestUtils.getConf();
     SnowflakeSinkConnectorConfig.setDefaultValues(config);
 
