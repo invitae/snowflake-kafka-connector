@@ -129,11 +129,11 @@ public class RecordService extends Logging {
     StringBuilder buffer = new StringBuilder();
     for (JsonNode node : valueContent.getData()) {
       ObjectNode data = MAPPER.createObjectNode();
-			if (meta.get(KEY) != null) {
-      	data.set(KEY, meta.get(KEY));
-			} else {
-      	data.set(KEY, MAPPER.createObjectNode());
-			}
+      if (meta.get(KEY) != null) {
+        data.set(KEY, meta.get(KEY));
+      } else {
+        data.set(KEY, MAPPER.createObjectNode());
+      }
       data.set(CONTENT, node);
       if (metadataConfig.allFlag) {
         data.set(META, meta);

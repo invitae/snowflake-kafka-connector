@@ -61,14 +61,16 @@ public class ProcessRecordTest {
             getString(),
             getAvro(),
             mapper.readTree(
-                "{\"key\":\"string value\",\"content\":{\"int\":222},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"schema_id\":1,\"key\":\"string"
+                "{\"key\":\"string"
+                    + " value\",\"content\":{\"int\":222},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"schema_id\":1,\"key\":\"string"
                     + " value\"}}")),
         new Case(
             "string key, avro without registry value",
             getString(),
             getAvroWithoutRegistryValue(),
             mapper.readTree(
-                "{\"key\":\"string value\",\"content\":{\"name\":\"foo\",\"age\":30},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"key\":\"string"
+                "{\"key\":\"string"
+                    + " value\",\"content\":{\"name\":\"foo\",\"age\":30},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"key\":\"string"
                     + " value\"}}{\"content\":{\"name\":\"bar\",\"age\":29},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"key\":\"string"
                     + " value\"}}")),
         new Case(
@@ -76,7 +78,8 @@ public class ProcessRecordTest {
             getString(),
             getJson(),
             mapper.readTree(
-                "{\"key\":\"string value\",\"content\":{\"some_field\":\"some_value\"},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"key\":\"string"
+                "{\"key\":\"string"
+                    + " value\",\"content\":{\"some_field\":\"some_value\"},\"meta\":{\"offset\":0,\"topic\":\"test\",\"partition\":0,\"key\":\"string"
                     + " value\"}}")),
         new Case(
             "avro key, avro value",
@@ -139,9 +142,8 @@ public class ProcessRecordTest {
             mapper.readTree(
                 "{\"key\":[{\"username\":\"miguno\",\"tweet\":\"Rock: Nerf paper, scissors is"
                     + " fine.\",\"timestamp\":1366150681},{\"username\":\"BlizzardCS\",\"tweet\":\"Works"
-                    + " as intended.  Terran is"
-                    + " IMBA.\",\"timestamp\":1366154481}],"
-                		+ "\"content\":{\"some_field\":\"some_value\"},\"meta\":{\"topic\":\"test\",\"offset\":0,\"partition\":0,\"key\":[{\"username\":\"miguno\",\"tweet\":\"Rock:"
+                    + " as intended.  Terran is IMBA.\",\"timestamp\":1366154481}],"
+                    + "\"content\":{\"some_field\":\"some_value\"},\"meta\":{\"topic\":\"test\",\"offset\":0,\"partition\":0,\"key\":[{\"username\":\"miguno\",\"tweet\":\"Rock:"
                     + " Nerf paper, scissors is"
                     + " fine.\",\"timestamp\":1366150681},{\"username\":\"BlizzardCS\",\"tweet\":\"Works"
                     + " as intended.  Terran is IMBA.\",\"timestamp\":1366154481}]}}")),
