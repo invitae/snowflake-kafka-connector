@@ -1,8 +1,14 @@
 name: Kafka Connector End2End Full Version Test GCS
 
 on:
-  schedule:
-    - cron:  '0 8 * * *'
+  push:
+    branches-ignore:
+      - '**'
+#on:
+#  push:
+#    branches: [ master ]
+#  pull_request:
+#    branches: '**'
 
 jobs:
   build:
