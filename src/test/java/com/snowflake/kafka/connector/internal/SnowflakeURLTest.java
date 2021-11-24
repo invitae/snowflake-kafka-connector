@@ -21,22 +21,16 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.contrib.java.lang.system.EnvironmentVariables;
 
-import java.io.IOException;
-
-public class SnowflakeURLTest
-{
-  @Rule
-  public final EnvironmentVariables environmentVariables
-    = new EnvironmentVariables();
+public class SnowflakeURLTest {
+  @Rule public final EnvironmentVariables environmentVariables = new EnvironmentVariables();
 
   @Test
-  public void createFromValidURL()
-  {
+  public void createFromValidURL() {
     String url = "http://account.snowflake.com:80";
 
     SnowflakeURL sfurl = new SnowflakeURL(url);
 
-    assert ! sfurl.sslEnabled();
+    assert !sfurl.sslEnabled();
 
     assert sfurl.getAccount().equals("account");
 
@@ -82,7 +76,7 @@ public class SnowflakeURLTest
 
     sfurl = new SnowflakeURL(url);
 
-    assert ! sfurl.sslEnabled();
+    assert !sfurl.sslEnabled();
 
     assert sfurl.getAccount().equals("account");
 
@@ -106,24 +100,61 @@ public class SnowflakeURLTest
   }
 
   @Test
-  public void testJDBCTracing()
-  {
+  public void testJDBCTracing() {
     environmentVariables.set(SnowflakeSinkConnectorConfig.SNOWFLAKE_JDBC_TRACE, "true");
 
     String url = "https://account.region.aws.privatelink.snowflake.com:443";
 
     SnowflakeURL sfurl = new SnowflakeURL(url);
 
-    assert sfurl.getJdbcUrl().equals("jdbc:snowflake://account.region.aws.privatelink.snowflake.com:443/?tracing=ALL");
-
+    assert sfurl
+        .getJdbcUrl()
+        .equals("jdbc:snowflake://account.region.aws.privatelink.snowflake.com:443/?tracing=ALL");
   }
 
   @Test(expected = SnowflakeKafkaConnectorException.class)
-  public void createFromInvalidURL()
-  {
+  public void createFromInvalidURL() {
     String url = "htt://account.snowflake.com:80";
 
     new SnowflakeURL(url);
   }
 
+  @Test
+  public void testRegionlessURLString() {
+    String url = "http://org-account.snowflake.com:80";
+
+    SnowflakeURL sfurl = new SnowflakeURL(url);
+
+    assert !sfurl.sslEnabled();
+
+    assert sfurl.getAccount().equals("org-account");
+
+    assert sfurl.getFullUrl().equals("org-account.snowflake.com:80");
+
+    assert sfurl.getPort() == 80;
+
+    assert sfurl.getScheme().equals("http");
+
+    assert sfurl.getJdbcUrl().equals("jdbc:snowflake://" + sfurl.getFullUrl());
+  }
+
+  @Test
+  public void testRegionlessWithPrivateLinkURL() {
+    // test with privatelink too
+    String url = "https://org-account.privatelink.snowflake.com:80";
+
+    SnowflakeURL sfurl = new SnowflakeURL(url);
+
+    assert sfurl.sslEnabled();
+
+    assert sfurl.getAccount().equals("org-account");
+
+    assert sfurl.getFullUrl().equals("org-account.privatelink.snowflake.com:80");
+
+    assert sfurl.getPort() == 80;
+
+    assert sfurl.getScheme().equals("https");
+
+    assert sfurl.getJdbcUrl().equals("jdbc:snowflake://" + sfurl.getFullUrl());
+  }
 }

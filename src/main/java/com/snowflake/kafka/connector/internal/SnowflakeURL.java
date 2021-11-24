@@ -18,17 +18,11 @@
 package com.snowflake.kafka.connector.internal;
 
 import com.snowflake.kafka.connector.SnowflakeSinkConnectorConfig;
-import net.snowflake.client.jdbc.internal.apache.arrow.util.VisibleForTesting;
-
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Snowflake URL Object
- * https://account.region.snowflakecomputing.com:443
- */
-public class SnowflakeURL extends Logging
-{
+/** Snowflake URL Object https://account.region.snowflakecomputing.com:443 */
+public class SnowflakeURL extends Logging {
 
   private String jdbcUrl;
 
@@ -40,15 +34,31 @@ public class SnowflakeURL extends Logging
 
   private int port;
 
-  public SnowflakeURL(String urlStr)
-  {
-    Pattern pattern = Pattern.compile("^(https?://)?((([\\w\\d]+)(\\" +
-        ".[\\w\\d-]+){2,})(:(\\d+))?)/?$");
+  /**
+   * There are several matching groups here. Matching groups numbers are identified as the opening
+   * braces start and are indexed from number 1.
+   *
+   * <p>Group 1: If https is present or not. (Not required)
+   *
+   * <p>Group 2: Is the entire URL including the port number
+   *
+   * <p>Group 3: URL until .com
+   *
+   * <p>Group 4: Account name (may include org-account/alias)
+   *
+   * <p>Group 5: (Everything after accountname or org-accountname until .com)
+   *
+   * <p>Group 7: port number
+   */
+  private static final String SNOWFLAKE_URL_REGEX_PATTERN =
+      "^(https?://)?((([\\w\\d-]+)(\\.[\\w\\d-]+){2,})(:(\\d+))?)/?$";
+
+  public SnowflakeURL(String urlStr) {
+    Pattern pattern = Pattern.compile(SNOWFLAKE_URL_REGEX_PATTERN);
 
     Matcher matcher = pattern.matcher(urlStr.trim().toLowerCase());
 
-    if (!matcher.find())
-    {
+    if (!matcher.find()) {
       throw SnowflakeErrors.ERROR_0007.getException("input url: " + urlStr);
     }
 
@@ -58,85 +68,67 @@ public class SnowflakeURL extends Logging
 
     account = matcher.group(4);
 
-    if (matcher.group(7) != null)
-    {
+    if (matcher.group(7) != null) {
       port = Integer.parseInt(matcher.group(7));
-    }
-    else if (ssl)
-    {
+    } else if (ssl) {
       port = 443;
-    }
-    else
-    {
+    } else {
       port = 80;
     }
 
     jdbcUrl = "jdbc:snowflake://" + url + ":" + port;
-    if (enableJDBCTrace())
-    {
+    if (enableJDBCTrace()) {
       logInfo("enabling JDBC tracing");
       jdbcUrl = jdbcUrl + "/?tracing=ALL";
     }
 
     logDebug("parsed Snowflake URL: {}", urlStr);
-
   }
 
   /**
    * Read environment variable JDBC_TRACE to check whether trace is enabled
+   *
    * @return whether to enable JDBC trace
    */
-  boolean enableJDBCTrace()
-  {
+  boolean enableJDBCTrace() {
     String enableJDBCTrace = System.getenv(SnowflakeSinkConnectorConfig.SNOWFLAKE_JDBC_TRACE);
     return enableJDBCTrace != null && enableJDBCTrace.toLowerCase().contains("true");
   }
 
-  String getJdbcUrl()
-  {
+  String getJdbcUrl() {
     return jdbcUrl;
   }
 
-  String getAccount()
-  {
+  String getAccount() {
     return account;
   }
 
-  boolean sslEnabled()
-  {
+  boolean sslEnabled() {
     return ssl;
   }
 
-  String getScheme()
-  {
-    if (ssl)
-    {
+  String getScheme() {
+    if (ssl) {
       return "https";
-    }
-    else
-    {
+    } else {
       return "http";
     }
   }
 
-  String getFullUrl()
-  {
+  String getFullUrl() {
     return url + ":" + port;
   }
 
-  String getUrlWithoutPort()
-  {
+  String getUrlWithoutPort() {
     return url;
   }
 
-  int getPort()
-  {
+  int getPort() {
     return port;
   }
 
   @Override
-  public String toString()
-  {
+  public String toString() {
     return getFullUrl();
   }
 }

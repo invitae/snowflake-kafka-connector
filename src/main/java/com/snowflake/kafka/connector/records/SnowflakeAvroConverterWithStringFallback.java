@@ -17,31 +17,26 @@
 package com.snowflake.kafka.connector.records;
 
 import com.snowflake.kafka.connector.internal.Logging;
-import org.apache.kafka.connect.data.SchemaAndValue;
-
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
+import org.apache.kafka.connect.data.SchemaAndValue;
 
-public class SnowflakeAvroConverterWithStringFallback extends SnowflakeAvroConverter
-{
+public class SnowflakeAvroConverterWithStringFallback extends SnowflakeAvroConverter {
   @Override
-  SchemaAndValue handleError(final Exception e, final byte[] bytes)
-  {
-    LOGGER.debug(Logging.logMessage("failed to parse record as Avro, interpreting as utf-8 string"));
+  protected SchemaAndValue logErrorAndReturnBrokenRecord(final Exception e, final byte[] bytes) {
+    LOGGER.debug(
+        Logging.logMessage("failed to parse record as Avro, interpreting as utf-8 string"));
     // assumes byte array is UTF-8 encoded
     Map<String, String> payload = new HashMap<>();
     payload.put("rawBytes", new String(bytes, StandardCharsets.UTF_8));
-    try
-    {
-      return new SchemaAndValue(new SnowflakeJsonSchema(),
-        new SnowflakeRecordContent(mapper.valueToTree(payload)));
-    } catch (IllegalArgumentException ex)
-    {
+    try {
+      return new SchemaAndValue(
+          new SnowflakeJsonSchema(), new SnowflakeRecordContent(mapper.valueToTree(payload)));
+    } catch (IllegalArgumentException ex) {
       LOGGER.error(Logging.logMessage("Failed to construct JSON record\n" + ex.toString()));
-      return new SchemaAndValue(new SnowflakeJsonSchema(),
-        new SnowflakeRecordContent(bytes)); // return a broken record
+      return new SchemaAndValue(
+          new SnowflakeJsonSchema(), new SnowflakeRecordContent(bytes)); // return a broken record
     }
   }
 }
